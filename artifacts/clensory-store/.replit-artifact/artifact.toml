@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Clensory — Clean, thoughtfully."
+description = "A warm, botanical ecommerce storefront for Clensory Pakistan, selling considered everyday cleaning products with product reviews, cart management, and a shipping checkout flow."
+version = "1.0.0"
+id = "artifacts/clensory-store"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23548
+
+[services.development]
+run = "pnpm --filter @workspace/clensory-store run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/clensory-store", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/clensory-store/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23548"
+BASE_PATH = "/"

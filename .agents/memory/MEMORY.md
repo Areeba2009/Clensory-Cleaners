@@ -1,0 +1,1 @@
+- [OpenAPI/Zod compatibility](openapi-zod-compatibility.md) — verify generated numeric validators against the installed Zod major version after codegen.
