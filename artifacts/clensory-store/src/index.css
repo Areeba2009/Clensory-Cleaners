@@ -87,8 +87,8 @@
 .storefront { overflow: hidden; }
 .announcement { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); text-align: center; padding: 9px 18px; font-size: 10px; letter-spacing: .15em; text-transform: uppercase; }
 .site-header { display: flex; justify-content: space-between; align-items: center; max-width: 1280px; margin: 0 auto; padding: 20px clamp(20px,4vw,54px); }
-.logo-crop { width: 82px; height: 34px; overflow: hidden; position: relative; flex: none; }
-.logo-crop img { width: 148px; height: 148px; position: absolute; left: -32px; top: -57px; max-width: none; }
+.logo-crop { width: 100px; height: 42px; overflow: hidden; position: relative; flex: none; }
+.logo-crop img { width: 100px; height: 100px; position: absolute; left: -18px; top: -30px; max-width: none; }
 .main-nav { display: flex; gap: 34px; align-items: center; margin-left: 30px; }
 .main-nav button, .header-action { border: 0; background: transparent; color: hsl(var(--foreground)); font-size: 11px; letter-spacing: .11em; text-transform: uppercase; padding: 6px 0; }
 .main-nav button:hover, .header-action:hover { color: hsl(var(--accent)); }
