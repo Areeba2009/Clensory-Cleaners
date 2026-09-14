@@ -18,6 +18,33 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in customer's billing history
+ */
+export const GetBillingHistoryHeader = zod.object({
+  "Authorization": zod.string().optional()
+})
+
+export const GetBillingHistoryResponseItem = zod.object({
+  "orderNumber": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "fullName": zod.string(),
+  "phone": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "subtotal": zod.number(),
+  "deliveryFee": zod.number(),
+  "total": zod.number(),
+  "items": zod.array(zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "quantity": zod.number(),
+  "unitPrice": zod.number()
+}))
+})
+export const GetBillingHistoryResponse = zod.array(GetBillingHistoryResponseItem)
+
+
+/**
  * Creates a new order from the storefront shipping form.
  * @summary Submit a customer order
  */
@@ -66,5 +93,53 @@ export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string(),
   "message": zod.string()
 })
+
+
+/**
+ * @summary Get the currently authenticated user
+ */
+export const GetCurrentAuthUserHeader = zod.object({
+  "Authorization": zod.string().optional()
+})
+
+export const GetCurrentAuthUserResponse = zod.object({
+  "user": zod.union([zod.object({
+  "id": zod.string(),
+  "email": zod.string().nullable(),
+  "firstName": zod.string().nullable(),
+  "lastName": zod.string().nullable(),
+  "profileImageUrl": zod.string().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Start the browser login flow
+ */
+export const BeginBrowserLoginQueryParams = zod.object({
+  "returnTo": zod.coerce.string().optional()
+})
+
+export const BeginBrowserLoginResponse = zod.void()
+
+
+/**
+ * @summary Complete the browser login flow
+ */
+export const HandleBrowserLoginCallbackResponse = zod.void()
+
+
+/**
+ * @summary Clear the browser session
+ */
+export const LogoutBrowserSessionQueryParams = zod.object({
+  "returnTo": zod.coerce.string().optional()
+})
+
+export const LogoutBrowserSessionHeader = zod.object({
+  "Authorization": zod.string().optional()
+})
+
+export const LogoutBrowserSessionResponse = zod.void()
 
 

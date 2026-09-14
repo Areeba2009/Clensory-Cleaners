@@ -50,7 +50,55 @@ export interface OrderConfirmation {
   message: string;
 }
 
+export interface BillingHistoryItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface BillingHistoryRecord {
+  orderNumber: string;
+  createdAt: string;
+  fullName: string;
+  phone: string;
+  address: string;
+  city: string;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  items: BillingHistoryItem[];
+}
+
+export type BillingHistoryResponse = BillingHistoryRecord[];
+
+export interface AuthUser {
+  id: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  profileImageUrl: string | null;
+}
+
+export interface AuthUserEnvelope {
+  user: AuthUser | null;
+}
+
 export interface ErrorResponse {
   error: string;
 }
+
+export type AuthorizationSessionHeaderParameter = string;
+
+export type BeginBrowserLoginParams = {
+returnTo?: string;
+};
+
+export type LogoutBrowserSessionParams = {
+returnTo?: string;
+};
 

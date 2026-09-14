@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: orders
     description: Customer order operations
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
 paths:
   /healthz:
     get:
@@ -27,6 +29,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
   /orders:
+    get:
+      operationId: getBillingHistory
+      tags: [orders]
+      summary: Get the signed-in customer's billing history
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "200":
+          description: Billing history for the signed-in customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingHistoryResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       operationId: createOrder
       tags: [orders]
@@ -51,7 +73,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "200":
+          description: Auth status resolved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start the browser login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the authentication provider
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete the browser login flow
+      responses:
+        "302":
+          description: Redirect back to the storefront
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: Clear the browser session
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect back to the storefront
 components:
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -137,6 +225,91 @@ components:
       required:
         - orderNumber
         - message
+    BillingHistoryItem:
+      type: object
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+      required:
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+    BillingHistoryRecord:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        fullName:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        subtotal:
+          type: number
+        deliveryFee:
+          type: number
+        total:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BillingHistoryItem"
+      required:
+        - orderNumber
+        - createdAt
+        - fullName
+        - phone
+        - address
+        - city
+        - subtotal
+        - deliveryFee
+        - total
+        - items
+    BillingHistoryResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/BillingHistoryRecord"
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: ["string", "null"]
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+      required:
+        - id
+        - email
+        - firstName
+        - lastName
+        - profileImageUrl
+    AuthUserEnvelope:
+      type: object
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+      required:
+        - user
     ErrorResponse:
       type: object
       properties:

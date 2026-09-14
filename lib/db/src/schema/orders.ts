@@ -1,9 +1,11 @@
 import { integer, numeric, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./auth";
 
 export const ordersTable = pgTable("orders", {
   id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => usersTable.id, { onDelete: "set null" }),
   orderNumber: varchar("order_number", { length: 32 }).notNull().unique(),
   fullName: text("full_name").notNull(),
   phone: varchar("phone", { length: 32 }).notNull(),
