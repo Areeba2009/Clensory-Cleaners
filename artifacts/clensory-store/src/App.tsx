@@ -25,6 +25,7 @@ const products: Product[] = [
   { id: 'laundro', name: 'Laundro', eyebrow: 'Laundry detergent', description: 'A gentle everyday laundry detergent that lifts the day away and leaves clothes feeling clean, soft and ready to wear.', price: 1250, size: '1 litre', image: laundroPhoto, color: '#76a9d4', category: 'laundro', rating: 4.8, reviewCount: 24, featured: true, reviews: [{ author: 'Sana, Islamabad', text: 'Our clothes come out fresh without an overpowering scent.' }, { author: 'Hiba, Rawalpindi', text: 'It feels gentle on everyday fabrics and lasts ages.' }] },
 ];
 
+const adminEmails = new Set(['clensory.pk@gmail.com', 'reebo.nadeem@gmail.com']);
 const emptyShipping: Shipping = { fullName: '', email: '', phone: '', address: '', city: '', province: '', postalCode: '', notes: '', paymentMethod: 'cod' };
 const checkoutDraftStorageKey = 'clensory-checkout-draft';
 
@@ -208,12 +209,16 @@ function Home() {
   const [recoveryOrderNumber, setRecoveryOrderNumber] = useState<string | null>(initialDraft.recoveryOrderNumber);
   const [confirmation, setConfirmation] = useState('');
   const auth = useAuth();
+  const isAdmin = Boolean(auth.user && (
+    auth.user.isAdmin ||
+    (auth.user.email && adminEmails.has(auth.user.email.trim().toLowerCase()))
+  ));
   const cancelCardOrder = useCancelCardOrder();
   const createOrder = useCreateOrder();
   const createCardCheckout = useCreateCardCheckout();
   const health = useHealthCheck();
   const billingHistory = useGetBillingHistory({ query: { queryKey: ['/api/orders'], enabled: auth.isAuthenticated && billingOpen } });
-  const adminOrders = useGetAdminOrders({ query: { queryKey: ['/api/admin/orders'], enabled: Boolean(auth.user?.isAdmin && adminOpen) } });
+  const adminOrders = useGetAdminOrders({ query: { queryKey: ['/api/admin/orders'], enabled: Boolean(isAdmin && adminOpen) } });
   const itemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
   const isSubmitting = createOrder.isPending || createCardCheckout.isPending || cancelCardOrder.isPending;
 
@@ -287,7 +292,7 @@ function Home() {
   const openCatalog = () => { document.getElementById('collection')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); };
   const openCheckout = () => { if (!auth.isAuthenticated) { auth.login(); return; } setCheckout(true); setFormError(''); };
   const openBilling = () => { if (!auth.isAuthenticated) { auth.login(); return; } setBillingOpen(true); };
-  const openAdmin = () => { if (!auth.isAuthenticated) { auth.login(); return; } if (auth.user?.isAdmin) setAdminOpen(true); };
+  const openAdmin = () => { if (!auth.isAuthenticated) { auth.login(); return; } if (isAdmin) setAdminOpen(true); };
   const submitOrder = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!auth.isAuthenticated) { auth.login(); return; }
@@ -314,7 +319,7 @@ function Home() {
     <header className="site-header">
       <button className="mobile-menu" type="button" onClick={() => setMobileNavOpen((open) => !open)} data-testid="button-mobile-menu" aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileNavOpen} aria-controls="mobile-nav">{mobileNavOpen ? <X size={20} /> : <Menu size={20} />}</button>
       <button className="logo-crop" type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} data-testid="button-logo-home" aria-label="Clensory home"><img src={logo} alt="Clensory Pakistan" /></button>
-        <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button>{auth.user?.isAdmin && <button type="button" onClick={openAdmin} data-testid="link-track-orders">Track orders</button>}</nav>
+        <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button>{isAdmin && <button type="button" onClick={openAdmin} data-testid="link-track-orders">Track orders</button>}</nav>
        <div className="header-tools">{auth.isAuthenticated ? <button type="button" className="header-action account-action" onClick={() => { sessionStorage.removeItem(checkoutDraftStorageKey); auth.logout(); }} data-testid="button-log-out" title="Log out"><LogOut size={14} /> Log out</button> : <button type="button" className="header-action account-action" onClick={auth.login} data-testid="button-log-in" title="Log in or create an account"><LogIn size={14} /> Log in</button>}<span className="header-action service-status" aria-label="Service status"><span className="health-dot" />{health.isLoading ? 'Here for you' : 'Pakistan made'}</span><button type="button" className="header-action bag-button" onClick={() => setCartOpen(true)} data-testid="button-open-cart"><ShoppingBag size={18} /><span>Bag</span>{itemCount > 0 && <span className="bag-count" data-testid="text-cart-count">{itemCount}</span>}</button></div>
     </header>
     <nav id="mobile-nav" className={`mobile-nav${mobileNavOpen ? ' open' : ''}`} aria-label="Mobile navigation" aria-hidden={!mobileNavOpen}>
@@ -322,8 +327,9 @@ function Home() {
       <button type="button" onClick={() => { document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); }} data-testid="mobile-link-our-approach">Our approach</button>
       <button type="button" onClick={() => { document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); }} data-testid="mobile-link-reviews">Reviews</button>
       <button type="button" onClick={() => { openBilling(); setMobileNavOpen(false); }} data-testid="mobile-link-billing-history">Billing history</button>
-      {auth.user?.isAdmin && <button type="button" onClick={() => { openAdmin(); setMobileNavOpen(false); }} data-testid="mobile-link-track-orders">Track orders</button>}
+      {isAdmin && <button type="button" onClick={() => { openAdmin(); setMobileNavOpen(false); }} data-testid="mobile-link-track-orders">Track orders</button>}
     </nav>
+    {isAdmin && <div className="admin-mobile-shortcut"><span>Admin workspace</span><button type="button" onClick={openAdmin} data-testid="mobile-shortcut-track-orders"><Receipt size={15} /> Track orders <ArrowRight size={14} /></button></div>}
     <main>
       <section className="hero">
         <div className="hero-copy"><div className="eyebrow">A calmer way to clean · from Pakistan</div><h1>Clean,<br /><em>thoughtfully.</em></h1><p className="hero-intro">Everyday home care, made with a lighter touch. Considered formulas, quiet scents and objects you’ll be happy to leave out.</p><button type="button" className="primary-button" onClick={openCatalog} data-testid="button-hero-shop">Shop the collection <ArrowRight size={16} /></button></div>
@@ -341,7 +347,7 @@ function Home() {
     {selected && <ProductDetail product={selected} onClose={() => setSelected(null)} onAdd={addToCart} />}
       {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={isSubmitting} retryBlocked={retryBlocked} onViewBilling={viewBillingBeforeRetry} onCheckPrevious={() => { if (recoveryOrderNumber) checkCancelledOrder(recoveryOrderNumber); }} canCheckPrevious={Boolean(recoveryOrderNumber)} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
      {billingOpen && auth.user && <BillingHistoryWindow records={billingHistory.data ?? []} isLoading={billingHistory.isLoading} isError={billingHistory.isError} user={auth.user} onClose={() => setBillingOpen(false)} />}
-      {adminOpen && auth.user?.isAdmin && <AdminOrderTrackingWindow records={adminOrders.data ?? []} isLoading={adminOrders.isLoading} isError={adminOrders.isError} onClose={() => setAdminOpen(false)} />}
+       {adminOpen && isAdmin && <AdminOrderTrackingWindow records={adminOrders.data ?? []} isLoading={adminOrders.isLoading} isError={adminOrders.isError} onClose={() => setAdminOpen(false)} />}
   </div>;
 }
 
