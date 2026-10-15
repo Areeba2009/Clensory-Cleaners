@@ -135,9 +135,9 @@
 .hero-bottle-clenso { transform: rotate(-5deg) scale(.8); }
 .hero-bottle-laundro { transform: rotate(5deg) scale(.9); }
 .bottle { position: relative; width: 155px; height: 305px; border-radius: 22px 22px 16px 16px; background: #d0d7ba; box-shadow: 14px 20px 0 rgba(35,31,32,.11); display: flex; align-items: center; justify-content: center; }
-.product-photo { width: auto; max-width: 48%; height: 90%; object-fit: contain; display: block; transition: transform .35s ease, filter .35s ease; }
+.product-photo { width: auto; max-width: 76%; height: 96%; object-fit: contain; display: block; transition: transform .35s ease, filter .35s ease; }
 .product-image:hover .product-photo { transform: scale(1.035); filter: saturate(1.04); }
-.detail-visual .product-photo { padding: 16px; }
+.detail-visual .product-photo { padding: 8px; }
 .bottle:before { content: ''; position: absolute; width: 75px; height: 34px; background: #231f20; border-radius: 6px 6px 2px 2px; top: -27px; }
 .bottle:after { content: ''; position: absolute; width: 108px; height: 120px; background: #f1f4e5; border: 1px solid rgba(35,31,32,.12); top: 91px; }
 .bottle-label { position: absolute; z-index: 1; top: 112px; text-align: center; width: 90px; font-family: var(--app-font-serif); font-size: 21px; line-height: .82; }
@@ -159,8 +159,8 @@
 .product-image:hover:after { opacity: 1; transform: translateY(0); }
 .product-image .bottle { transform: scale(.62); box-shadow: 9px 14px 0 rgba(35,31,32,.1); transition: transform .35s; }
 .product-image:hover .bottle { transform: scale(.68) translateY(-7px); }
-.product-image.clenso { background: #f0e4bb; }
-.product-image.laundro { background: #c8d9e6; }
+.product-image.clenso { background: #e9e7da; }
+.product-image.laundro { background: #e3e9e6; }
 .card-body { padding: 16px 2px 0; }
 .card-top { display: flex; justify-content: space-between; gap: 8px; }
 .card-body h3 { font-family: var(--app-font-serif); font-weight: 600; font-size: 26px; margin: 7px 0 3px; line-height: .98; }
