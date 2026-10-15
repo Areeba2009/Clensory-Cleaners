@@ -256,6 +256,14 @@
 .detail-info h2 { font-family: var(--app-font-serif); font-size: clamp(42px,5vw,64px); line-height: .86; margin: 15px 0; }
 .detail-info > p { color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.7; }
 .detail-meta { display: flex; justify-content: space-between; border-block: 1px solid hsl(var(--border)); padding: 14px 0; margin: 22px 0; font-size: 12px; }
+.variant-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 22px 0 0; }
+.variant-option { display: grid; gap: 8px; padding: 14px; border: 1px solid hsl(var(--border)); background: transparent; color: hsl(var(--foreground)); text-align: left; cursor: pointer; transition: border-color .2s, background-color .2s; }
+.variant-option:hover, .variant-option:focus-visible { border-color: hsl(var(--primary)); }
+.variant-option.selected { border-color: hsl(var(--primary)); background: hsl(var(--muted)); }
+.variant-option-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.variant-option-heading strong:last-child { white-space: nowrap; }
+.variant-option small { color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; }
+.variant-volume-note { margin: -9px 0 18px !important; font-size: 11px !important; }
 .review-section { margin-top: 27px; }
 .review-section h3 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 13px; }
 .review { border-top: 1px solid hsl(var(--border)); padding: 13px 0; }

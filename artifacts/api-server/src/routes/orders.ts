@@ -3,9 +3,32 @@ import { CancelCardOrderBody, CreateOrderBody } from "@workspace/api-zod";
 import { db, isAdminEmail, orderItemsTable, ordersTable } from "@workspace/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../lib/stripeClient";
-import { stripePriceIds } from "../lib/stripeCatalog";
+import { clensoryProductVariants, stripePriceIds } from "../lib/stripeCatalog";
 
 const router: IRouter = Router();
+
+function canonicalizeOrderData(data: ReturnType<typeof CreateOrderBody.parse>) {
+  const items = [];
+  for (const item of data.items) {
+    const variant = clensoryProductVariants[item.productId as keyof typeof clensoryProductVariants];
+    if (!variant || !Number.isInteger(item.quantity) || item.quantity < 1) return null;
+    items.push({
+      ...item,
+      productName: `${variant.productName} — ${variant.sizeLabel}`,
+      unitPrice: variant.unitPrice,
+    });
+  }
+
+  const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const deliveryFee = subtotal > 3000 ? 0 : 250;
+  return {
+    ...data,
+    items,
+    subtotal,
+    deliveryFee,
+    total: subtotal + deliveryFee,
+  };
+}
 
 function orderReceipt(order: typeof ordersTable.$inferSelect, items: Array<typeof orderItemsTable.$inferSelect>) {
   return {
@@ -125,9 +148,13 @@ router.post("/orders", async (req, res) => {
     });
   }
 
-  const { items, shipping, subtotal, deliveryFee, total } = parsed.data;
+  const orderData = canonicalizeOrderData(parsed.data);
+  if (!orderData) {
+    return res.status(400).json({ error: "One of the selected product sizes is not available." });
+  }
+
   try {
-    const order = await insertOrder(req.user.id, parsed.data);
+    const order = await insertOrder(req.user.id, orderData);
 
     return res.status(201).json({
       orderNumber: order.orderNumber,
@@ -151,18 +178,23 @@ router.post("/orders/checkout", async (req, res) => {
     return res.status(400).json({ error: "Please choose card payment and complete your order details." });
   }
 
+  const orderData = canonicalizeOrderData(parsed.data);
+  if (!orderData) {
+    return res.status(400).json({ error: "One of the selected product sizes is not available." });
+  }
+
   try {
-    const order = await insertOrder(req.user.id, parsed.data);
+    const order = await insertOrder(req.user.id, orderData);
     const stripe = await getUncachableStripeClient();
     const lineItems: Array<{ price: string; quantity: number }> = [];
-    for (const item of parsed.data.items) {
-      const price = stripePriceIds[item.productId as keyof typeof stripePriceIds];
-      if (!price || item.productId === "delivery") {
+    for (const item of orderData.items) {
+      const variant = clensoryProductVariants[item.productId as keyof typeof clensoryProductVariants];
+      if (!variant) {
         return res.status(400).json({ error: "One of the selected products is not available for card checkout." });
       }
-      lineItems.push({ price, quantity: Math.round(item.quantity) });
+      lineItems.push({ price: variant.stripePriceId, quantity: item.quantity });
     }
-    if (parsed.data.deliveryFee > 0) {
+    if (orderData.deliveryFee > 0) {
       lineItems.push({ price: stripePriceIds.delivery, quantity: 1 });
     }
 
@@ -170,7 +202,7 @@ router.post("/orders/checkout", async (req, res) => {
       mode: "payment",
       payment_method_types: ["card"],
       line_items: lineItems,
-      customer_email: parsed.data.shipping.email,
+      customer_email: orderData.shipping.email,
       success_url: `${getStorefrontOrigin(req)}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${getStorefrontOrigin(req)}/?payment=cancelled&order=${order.orderNumber}`,
       metadata: {

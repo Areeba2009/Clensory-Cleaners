@@ -13,16 +13,17 @@ import clensoPhoto from '@assets/1_Clenso_(11)_1786866511998.png';
 const queryClient = new QueryClient();
 
 type Review = { author: string; text: string };
+type ProductVariant = { productId: string; label: string; size: string; price: number; bottleCount: number };
 type Product = {
-  id: string; name: string; eyebrow: string; description: string; price: number; size: string; image: string;
+  id: string; name: string; eyebrow: string; description: string; variants: ProductVariant[]; image: string;
   color: string; category: string; rating: number; reviewCount: number; reviews: Review[]; featured: boolean;
 };
-type CartItem = { product: Product; quantity: number };
+type CartItem = { product: Product; variant: ProductVariant; quantity: number };
 type Shipping = { fullName: string; email: string; phone: string; address: string; city: string; province: string; postalCode: string; notes: string; paymentMethod: 'cod' | 'card' };
 
 const products: Product[] = [
-  { id: 'clenso', name: 'Clenso', eyebrow: 'Dishwash cleaner', description: 'A bright, hardworking dishwash cleaner for the daily pile, made to leave plates fresh and hands comfortable.', price: 760, size: '500 ml', image: clensoPhoto, color: '#e8c947', category: 'clenso', rating: 4.9, reviewCount: 38, featured: true, reviews: [{ author: 'Ayesha, Lahore', text: 'A little goes a long way, and it cuts through the after-dinner pile.' }, { author: 'Mariam, Karachi', text: 'Fresh dishes without that sharp chemical smell.' }] },
-  { id: 'laundro', name: 'Laundro', eyebrow: 'Laundry detergent', description: 'A gentle everyday laundry detergent that lifts the day away and leaves clothes feeling clean, soft and ready to wear.', price: 1250, size: '1 litre', image: laundroPhoto, color: '#76a9d4', category: 'laundro', rating: 4.8, reviewCount: 24, featured: true, reviews: [{ author: 'Sana, Islamabad', text: 'Our clothes come out fresh without an overpowering scent.' }, { author: 'Hiba, Rawalpindi', text: 'It feels gentle on everyday fabrics and lasts ages.' }] },
+  { id: 'clenso', name: 'Clenso', eyebrow: 'Dishwash cleaner', description: 'A bright, hardworking dishwash cleaner for the daily pile, made to leave plates fresh and hands comfortable.', variants: [{ productId: 'clenso-1l', label: '1L bottle', size: '1L bottle', price: 550, bottleCount: 1 }, { productId: 'clenso-3l', label: '3L bundle', size: '3L total · 3 × 1L bottles', price: 1500, bottleCount: 3 }], image: clensoPhoto, color: '#e8c947', category: 'clenso', rating: 4.9, reviewCount: 38, featured: true, reviews: [{ author: 'Ayesha, Lahore', text: 'A little goes a long way, and it cuts through the after-dinner pile.' }, { author: 'Mariam, Karachi', text: 'Fresh dishes without that sharp chemical smell.' }] },
+  { id: 'laundro', name: 'Laundro', eyebrow: 'Laundry detergent', description: 'A gentle everyday laundry detergent that lifts the day away and leaves clothes feeling clean, soft and ready to wear.', variants: [{ productId: 'laundro-1l', label: '1L bottle', size: '1L bottle', price: 550, bottleCount: 1 }, { productId: 'laundro-3l', label: '3L bundle', size: '3L total · 3 × 1L bottles', price: 1500, bottleCount: 3 }], image: laundroPhoto, color: '#76a9d4', category: 'laundro', rating: 4.8, reviewCount: 24, featured: true, reviews: [{ author: 'Sana, Islamabad', text: 'Our clothes come out fresh without an overpowering scent.' }, { author: 'Hiba, Rawalpindi', text: 'It feels gentle on everyday fabrics and lasts ages.' }] },
 ];
 
 const adminEmails = new Set(['clensory.pk@gmail.com', 'reebo.nadeem@gmail.com']);
@@ -38,11 +39,12 @@ function readCheckoutDraft(): { cart: CartItem[]; shipping: Shipping; retryBlock
     const cart = Array.isArray(parsed.cart)
       ? parsed.cart.flatMap((entry): CartItem[] => {
           if (!entry || typeof entry !== 'object') return [];
-          const savedItem = entry as { productId?: unknown; quantity?: unknown };
+          const savedItem = entry as { productId?: unknown; variantId?: unknown; quantity?: unknown };
           const product = products.find((candidate) => candidate.id === savedItem.productId);
+          const variant = product?.variants.find((candidate) => candidate.productId === savedItem.variantId) ?? product?.variants[0];
           const quantity = Number(savedItem.quantity);
-          return product && Number.isFinite(quantity) && quantity > 0
-            ? [{ product, quantity: Math.floor(quantity) }]
+          return product && variant && Number.isFinite(quantity) && quantity > 0
+            ? [{ product, variant, quantity: Math.floor(quantity) }]
             : [];
         })
       : [];
@@ -78,7 +80,7 @@ function persistCheckoutDraft(cart: CartItem[], shipping: Shipping, retryBlocked
       return;
     }
     sessionStorage.setItem(checkoutDraftStorageKey, JSON.stringify({
-      cart: cart.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+      cart: cart.map(({ product, variant, quantity }) => ({ productId: product.id, variantId: variant.productId, quantity })),
       shipping,
       retryBlocked,
       recoveryOrderNumber,
@@ -103,19 +105,20 @@ function Rating({ product }: { product: Product }) {
   return <div className="rating" data-testid={`text-rating-${product.id}`} aria-label={`${product.rating} out of 5 stars`}><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><span>{product.rating} · {product.reviewCount} reviews</span></div>;
 }
 
-function ProductCard({ product, onDetail, onAdd }: { product: Product; onDetail: (p: Product) => void; onAdd: (p: Product) => void }) {
+function ProductCard({ product, onDetail, onAdd }: { product: Product; onDetail: (p: Product) => void; onAdd: (p: Product, variant: ProductVariant) => void }) {
+  const singleBottle = product.variants[0];
   return (
     <article className="product-card" data-testid={`card-product-${product.id}`}>
       <button type="button" className="unstyled-product" onClick={() => onDetail(product)} data-testid={`button-details-${product.id}`} aria-label={`View details for ${product.name}`} style={{ display: 'block', width: '100%', border: 0, padding: 0, background: 'transparent', textAlign: 'left' }}>
         <ProductArt product={product} />
       </button>
       <div className="card-body">
-        <div className="card-top"><div className="eyebrow">{product.eyebrow}</div><div className="card-price">{formatPrice(product.price)}</div></div>
+        <div className="card-top"><div className="eyebrow">{product.eyebrow}</div><div className="card-price">From {formatPrice(singleBottle.price)}</div></div>
         <h3>{product.name}</h3>
-        <p>{product.size}</p>
+        <p>1L bottle · 3L bundle available</p>
         <Rating product={product} />
         <div className="card-actions">
-          <button type="button" className="add-button" onClick={() => onAdd(product)} data-testid={`button-add-${product.id}`}>Add to bag</button>
+          <button type="button" className="add-button" onClick={() => onAdd(product, singleBottle)} data-testid={`button-add-${product.id}`}>Add 1L to bag</button>
           <button type="button" className="round-action" onClick={() => onDetail(product)} data-testid={`button-review-${product.id}`} aria-label={`Read reviews for ${product.name}`}><Star size={15} /></button>
         </div>
       </div>
@@ -123,7 +126,9 @@ function ProductCard({ product, onDetail, onAdd }: { product: Product; onDetail:
   );
 }
 
-function ProductDetail({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (p: Product) => void }) {
+function ProductDetail({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (p: Product, variant: ProductVariant) => void }) {
+  const [selectedVariantId, setSelectedVariantId] = useState(product.variants[0].productId);
+  const selectedVariant = product.variants.find((variant) => variant.productId === selectedVariantId) ?? product.variants[0];
   return (
     <div className="detail-modal-wrap" role="dialog" aria-modal="true" data-testid="dialog-product-detail" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="detail-modal">
@@ -134,9 +139,16 @@ function ProductDetail({ product, onClose, onAdd }: { product: Product; onClose:
             <div className="eyebrow">{product.eyebrow}</div>
             <h2>{product.name}</h2>
             <Rating product={product} />
-            <div className="detail-meta"><span>{product.size}</span><strong>{formatPrice(product.price)}</strong></div>
+            <div className="variant-options" role="group" aria-label={`${product.name} size and price`}>
+              {product.variants.map((variant) => <button key={variant.productId} type="button" className={`variant-option${selectedVariant.productId === variant.productId ? ' selected' : ''}`} aria-pressed={selectedVariant.productId === variant.productId} onClick={() => setSelectedVariantId(variant.productId)} data-testid={`button-variant-${variant.productId}`}>
+                <span className="variant-option-heading"><strong>{variant.label}</strong><strong>{formatPrice(variant.price)}</strong></span>
+                <small>{variant.bottleCount === 1 ? 'One 1L bottle' : 'Three 1L bottles · 3L total'}</small>
+              </button>)}
+            </div>
+            <div className="detail-meta" aria-live="polite"><span>{selectedVariant.size}</span><strong>{formatPrice(selectedVariant.price)}</strong></div>
+            <p className="variant-volume-note">Each bottle contains 1L. The 3L bundle includes three 1L bottles.</p>
             <p>{product.description}</p>
-            <button type="button" className="primary-button" onClick={() => { onAdd(product); onClose(); }} data-testid={`button-detail-add-${product.id}`}>Add to bag <ArrowRight size={15} /></button>
+            <button type="button" className="primary-button" onClick={() => { onAdd(product, selectedVariant); onClose(); }} data-testid={`button-detail-add-${product.id}`}>Add {selectedVariant.label} to bag <ArrowRight size={15} /></button>
             <div className="review-section"><h3>What homes are saying</h3>{product.reviews.map((review) => <div className="review" key={review.author}><div className="rating"><Star size={11} fill="currentColor" /><Star size={11} fill="currentColor" /><Star size={11} fill="currentColor" /><Star size={11} fill="currentColor" /><Star size={11} fill="currentColor" /></div><p>“{review.text}”</p><small>{review.author}</small></div>)}</div>
           </div>
         </div>
@@ -170,9 +182,9 @@ function AdminOrderTrackingWindow({ records, isLoading, isError, onClose }: {
 }
 
 function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack, shipping, setShipping, onSubmit, isPending, retryBlocked, onViewBilling, onCheckPrevious, canCheckPrevious, error, confirmation, onContinue, isAuthenticated }: {
-  items: CartItem[]; onClose: () => void; onChangeQty: (id: string, delta: number) => void; onCheckout: () => void; checkout: boolean; onBack: () => void; shipping: Shipping; setShipping: (shipping: Shipping) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isPending: boolean; retryBlocked: boolean; onViewBilling: () => void; onCheckPrevious: () => void; canCheckPrevious: boolean; error: string; confirmation: string; onContinue: () => void; isAuthenticated: boolean;
+  items: CartItem[]; onClose: () => void; onChangeQty: (variantId: string, delta: number) => void; onCheckout: () => void; checkout: boolean; onBack: () => void; shipping: Shipping; setShipping: (shipping: Shipping) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isPending: boolean; retryBlocked: boolean; onViewBilling: () => void; onCheckPrevious: () => void; canCheckPrevious: boolean; error: string; confirmation: string; onContinue: () => void; isAuthenticated: boolean;
 }) {
-  const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const subtotal = items.reduce((sum, item) => sum + item.variant.price * item.quantity, 0);
   const delivery = subtotal > 3000 || subtotal === 0 ? 0 : 250;
   const total = subtotal + delivery;
   const update = (key: keyof Shipping, value: string) => setShipping({ ...shipping, [key]: value });
@@ -190,7 +202,7 @@ function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack,
         {retryBlocked && <div className="payment-retry-blocked" data-testid="text-payment-retry-blocked"><p>We couldn’t confirm that the previous card session is closed. Check your billing history before starting another payment.</p><div className="payment-retry-actions">{canCheckPrevious && <button type="button" className="secondary-button" onClick={onCheckPrevious} disabled={isPending} data-testid="button-recheck-card-payment">{isPending ? 'Checking payment...' : 'Check payment again'}</button>}<button type="button" className="secondary-button" onClick={onViewBilling} data-testid="button-check-billing-before-retry">View billing history</button></div></div>}
       {error && <div className="field-error" data-testid="text-form-error">{error}</div>}
         <div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="submit" className="primary-button" disabled={isPending || retryBlocked} data-testid="button-place-order">{retryBlocked ? 'Check billing history first' : isPending ? 'Sending your order...' : 'Place order'} <ArrowRight size={15} /></button></div>
-    </form></div> : <><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.product.id} data-testid={`row-cart-${item.product.id}`}><div className={`mini-product-image ${item.product.category}`}><img className="mini-product-photo" src={item.product.image} alt="" /></div><div><div className="cart-item-name">{item.product.name}</div><div className="cart-item-meta">{item.product.size} · {formatPrice(item.product.price)}</div><div className="qty-control"><button type="button" onClick={() => onChangeQty(item.product.id, -1)} data-testid={`button-decrease-${item.product.id}`} aria-label="Decrease quantity"><Minus size={12} /></button><span data-testid={`text-quantity-${item.product.id}`}>{item.quantity}</span><button type="button" onClick={() => onChangeQty(item.product.id, 1)} data-testid={`button-increase-${item.product.id}`} aria-label="Increase quantity"><Plus size={12} /></button></div></div><div className="line-total">{formatPrice(item.product.price * item.quantity)}</div></div>)}</div><div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><p className="summary-note">{subtotal < 3000 ? `Add ${formatPrice(3000 - subtotal)} more for complimentary delivery.` : 'Complimentary delivery is included for this order.'}</p><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="button" className="primary-button" onClick={onCheckout} data-testid="button-checkout">{isAuthenticated ? 'Continue to checkout' : 'Log in to checkout'} <ArrowRight size={15} /></button></div></>}
+     </form></div> : <><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.variant.productId} data-testid={`row-cart-${item.variant.productId}`}><div className={`mini-product-image ${item.product.category}`}><img className="mini-product-photo" src={item.product.image} alt="" /></div><div><div className="cart-item-name">{item.product.name}</div><div className="cart-item-meta">{item.variant.size} · {formatPrice(item.variant.price)}</div><div className="qty-control"><button type="button" onClick={() => onChangeQty(item.variant.productId, -1)} data-testid={`button-decrease-${item.variant.productId}`} aria-label="Decrease quantity"><Minus size={12} /></button><span data-testid={`text-quantity-${item.variant.productId}`}>{item.quantity}</span><button type="button" onClick={() => onChangeQty(item.variant.productId, 1)} data-testid={`button-increase-${item.variant.productId}`} aria-label="Increase quantity"><Plus size={12} /></button></div></div><div className="line-total">{formatPrice(item.variant.price * item.quantity)}</div></div>)}</div><div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><p className="summary-note">{subtotal < 3000 ? `Add ${formatPrice(3000 - subtotal)} more for complimentary delivery.` : 'Complimentary delivery is included for this order.'}</p><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="button" className="primary-button" onClick={onCheckout} data-testid="button-checkout">{isAuthenticated ? 'Continue to checkout' : 'Log in to checkout'} <ArrowRight size={15} /></button></div></>}
     </aside></>;
 }
 
@@ -287,8 +299,8 @@ function Home() {
       });
     }
   }, [auth.isAuthenticated]);
-  const addToCart = (product: Product) => { setCart((current) => { const existing = current.find((item) => item.product.id === product.id); return existing ? current.map((item) => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { product, quantity: 1 }]; }); setCartOpen(true); };
-  const changeQty = (id: string, delta: number) => setCart((current) => current.map((item) => item.product.id === id ? { ...item, quantity: item.quantity + delta } : item).filter((item) => item.quantity > 0));
+   const addToCart = (product: Product, variant: ProductVariant) => { setCart((current) => { const existing = current.find((item) => item.variant.productId === variant.productId); return existing ? current.map((item) => item.variant.productId === variant.productId ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { product, variant, quantity: 1 }]; }); setCartOpen(true); };
+   const changeQty = (variantId: string, delta: number) => setCart((current) => current.map((item) => item.variant.productId === variantId ? { ...item, quantity: item.quantity + delta } : item).filter((item) => item.quantity > 0));
   const openCatalog = () => { document.getElementById('collection')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); };
   const openCheckout = () => { if (!auth.isAuthenticated) { auth.login(); return; } setCheckout(true); setFormError(''); };
   const openBilling = () => { if (!auth.isAuthenticated) { auth.login(); return; } setBillingOpen(true); };
@@ -301,9 +313,9 @@ function Home() {
       return;
     }
     setFormError('');
-    const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const subtotal = cart.reduce((sum, item) => sum + item.variant.price * item.quantity, 0);
     const deliveryFee = subtotal > 3000 ? 0 : 250;
-    const data = { items: cart.map((item) => ({ productId: item.product.id, productName: item.product.name, quantity: item.quantity, unitPrice: item.product.price })), shipping: { ...shipping, notes: shipping.notes || null }, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: shipping.paymentMethod };
+    const data = { items: cart.map((item) => ({ productId: item.variant.productId, productName: `${item.product.name} — ${item.variant.size}`, quantity: item.quantity, unitPrice: item.variant.price })), shipping: { ...shipping, notes: shipping.notes || null }, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: shipping.paymentMethod };
     const onSuccess = (result: { orderNumber: string }) => { setConfirmation(`Your order ${result.orderNumber} has been placed.`); setCart([]); setShipping(emptyShipping); queryClient.invalidateQueries({ queryKey: billingHistory.queryKey }); queryClient.invalidateQueries({ queryKey: adminOrders.queryKey }); };
     if (shipping.paymentMethod === 'card') {
       persistCheckoutDraft(cart, shipping, retryBlocked, recoveryOrderNumber);
