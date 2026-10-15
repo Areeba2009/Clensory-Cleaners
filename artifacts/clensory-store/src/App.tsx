@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronDown, Leaf, LogIn, LogOut, Menu, Minus, Plus, Receipt, ShieldCheck, ShoppingBag, Star, Truck, X } from 'lucide-react';
-import { useCreateOrder, useGetBillingHistory, useHealthCheck, type BillingHistoryRecord } from '@workspace/api-client-react';
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronDown, CreditCard, Leaf, LogIn, LogOut, Menu, Minus, Plus, Receipt, ShieldCheck, ShoppingBag, Star, Truck, X } from 'lucide-react';
+import { getPaymentStatus, useCreateCardCheckout, useCreateOrder, useGetAdminOrders, useGetBillingHistory, useHealthCheck, type AdminOrderRecord, type BillingHistoryRecord } from '@workspace/api-client-react';
 import { useAuth } from '@workspace/replit-auth-web';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -18,7 +18,7 @@ type Product = {
   color: string; category: string; rating: number; reviewCount: number; reviews: Review[]; featured: boolean;
 };
 type CartItem = { product: Product; quantity: number };
-type Shipping = { fullName: string; phone: string; address: string; city: string; notes: string };
+type Shipping = { fullName: string; email: string; phone: string; address: string; city: string; province: string; postalCode: string; notes: string; paymentMethod: 'cod' | 'card' };
 
 const products: Product[] = [
   { id: 'clenso', name: 'Clenso', eyebrow: 'Dishwash cleaner', description: 'A bright, hardworking dishwash cleaner for the daily pile, made to leave plates fresh and hands comfortable.', price: 760, size: '500 ml', image: clensoPhoto, color: '#e8c947', category: 'clenso', rating: 4.9, reviewCount: 38, featured: true, reviews: [{ author: 'Ayesha, Lahore', text: 'A little goes a long way, and it cuts through the after-dinner pile.' }, { author: 'Mariam, Karachi', text: 'Fresh dishes without that sharp chemical smell.' }] },
@@ -95,6 +95,17 @@ function BillingHistoryWindow({ records, isLoading, isError, user, onClose }: {
   </div>;
 }
 
+function AdminOrderTrackingWindow({ records, isLoading, isError, onClose }: {
+  records: AdminOrderRecord[]; isLoading: boolean; isError: boolean; onClose: () => void;
+}) {
+  return <div className="billing-modal-wrap" role="dialog" aria-modal="true" aria-labelledby="track-orders-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="billing-modal admin-orders-modal">
+      <div className="billing-head"><div><div className="eyebrow">Admin workspace</div><h2 id="track-orders-title">Track orders</h2></div><button type="button" className="icon-button" onClick={onClose} data-testid="button-close-track-orders" aria-label="Close tracked orders"><X size={21} /></button></div>
+      {isLoading ? <div className="billing-state"><div className="billing-loader" /><p>Loading every order receipt...</p></div> : isError ? <div className="billing-state"><Receipt size={28} /><h3>Order tracking unavailable</h3><p>We couldn’t load the admin order ledger right now.</p></div> : records.length === 0 ? <div className="billing-state"><Receipt size={28} /><h3>No orders yet</h3><p>New customer receipts will be stored here after checkout.</p></div> : <div className="billing-records">{records.map((record) => <article className="billing-record admin-order-record" key={record.orderNumber}><div className="billing-record-head"><div><span className="billing-order-number">{record.orderNumber}</span><span className="billing-date"><CalendarDays size={12} />{new Intl.DateTimeFormat('en-PK', { dateStyle: 'medium' }).format(new Date(record.createdAt))}</span></div><strong>{formatPrice(record.total)}</strong></div><div className="admin-order-badges"><span>{record.orderStatus.replaceAll('_', ' ')}</span><span>{record.paymentMethod === 'card' ? 'Card' : 'Cash on delivery'} · {record.paymentStatus.replaceAll('_', ' ')}</span></div><div className="admin-customer"><strong>{record.fullName}</strong><span>{record.customerEmail} · {record.phone}</span></div><div className="billing-items">{record.items.map((item) => <div className="billing-item" key={`${record.orderNumber}-${item.productId}`}><span>{item.productName} × {item.quantity}</span><span>{formatPrice(item.unitPrice * item.quantity)}</span></div>)}</div><div className="billing-delivery">{record.address}, {record.city}, {record.province} {record.postalCode}</div></article>)}</div>}
+    </section>
+  </div>;
+}
+
 function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack, shipping, setShipping, onSubmit, isPending, error, confirmation, onContinue, isAuthenticated }: {
   items: CartItem[]; onClose: () => void; onChangeQty: (id: string, delta: number) => void; onCheckout: () => void; checkout: boolean; onBack: () => void; shipping: Shipping; setShipping: (shipping: Shipping) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isPending: boolean; error: string; confirmation: string; onContinue: () => void; isAuthenticated: boolean;
 }) {
@@ -104,11 +115,15 @@ function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack,
   const update = (key: keyof Shipping, value: string) => setShipping({ ...shipping, [key]: value });
   return <><div className="drawer-overlay" onClick={onClose} data-testid="drawer-overlay" /><aside className="drawer" aria-label={checkout ? 'Checkout' : 'Shopping bag'} data-testid="drawer-cart">
     <div className="drawer-head"><h2>{confirmation ? 'On its way' : checkout ? 'Your details' : 'Your bag'}</h2><button type="button" className="icon-button" onClick={onClose} data-testid="button-close-cart" aria-label="Close bag"><X size={21} /></button></div>
-    {confirmation ? <div className="order-success"><div className="success-mark"><Check size={30} /></div><h2>Order received.</h2><p>{confirmation} We’ll be in touch before your Clensory parcel leaves us.</p><button type="button" className="primary-button" onClick={onContinue} data-testid="button-continue-shopping">Continue browsing <ArrowRight size={15} /></button></div> : items.length === 0 ? <div className="cart-empty"><div><div className="empty-mark"><ShoppingBag size={25} /></div><h3>A little space.</h3><p>Your bag is ready when you are.<br />Start with something for the daily reset.</p><button type="button" className="secondary-button" onClick={onClose} data-testid="button-empty-continue">Explore the collection <ArrowRight size={14} /></button></div></div> : checkout ? <div className="checkout-view"><button type="button" className="back-link" onClick={onBack} data-testid="button-back-to-bag"><ArrowLeft size={13} /> Back to bag</button><h3 className="checkout-title">Where should we send it?</h3><p className="checkout-kicker">Thoughtful delivery across Pakistan, packed with care.</p><form className="checkout-form" onSubmit={onSubmit} noValidate>
-      <div className="field"><label htmlFor="fullName">Full name</label><input id="fullName" value={shipping.fullName} onChange={(e) => update('fullName', e.target.value)} data-testid="input-full-name" placeholder="Your name" />{!shipping.fullName.trim() && <span className="field-error" hidden>Tell us your name</span>}</div>
+     {confirmation ? <div className="order-success"><div className="success-mark"><Check size={30} /></div><h2>Order received.</h2><p>{confirmation} We’ll be in touch before your Clensory parcel leaves us.</p><button type="button" className="primary-button" onClick={onContinue} data-testid="button-continue-shopping">Continue browsing <ArrowRight size={15} /></button></div> : items.length === 0 ? <div className="cart-empty"><div><div className="empty-mark"><ShoppingBag size={25} /></div><h3>A little space.</h3><p>Your bag is ready when you are.<br />Start with something for the daily reset.</p><button type="button" className="secondary-button" onClick={onClose} data-testid="button-empty-continue">Explore the collection <ArrowRight size={14} /></button></div></div> : checkout ? <div className="checkout-view"><button type="button" className="back-link" onClick={onBack} data-testid="button-back-to-bag"><ArrowLeft size={13} /> Back to bag</button><h3 className="checkout-title">Where should we send it?</h3><p className="checkout-kicker">Thoughtful delivery across Pakistan, packed with care.</p><form className="checkout-form" onSubmit={onSubmit} noValidate>
+       <div className="field"><label htmlFor="fullName">Full name</label><input id="fullName" value={shipping.fullName} onChange={(e) => update('fullName', e.target.value)} data-testid="input-full-name" placeholder="Your name" />{!shipping.fullName.trim() && <span className="field-error" hidden>Tell us your name</span>}</div>
+       <div className="field"><label htmlFor="email">Email address</label><input id="email" type="email" value={shipping.email} onChange={(e) => update('email', e.target.value)} data-testid="input-email" placeholder="you@example.com" /></div>
       <div className="field"><label htmlFor="phone">Phone number</label><input id="phone" value={shipping.phone} onChange={(e) => update('phone', e.target.value)} data-testid="input-phone" placeholder="03xx xxx xxxx" /></div>
       <div className="field"><label htmlFor="address">Delivery address</label><textarea id="address" value={shipping.address} onChange={(e) => update('address', e.target.value)} data-testid="input-address" placeholder="House, street, neighbourhood" /></div>
-      <div className="form-row"><div className="field"><label htmlFor="city">City</label><select id="city" value={shipping.city} onChange={(e) => update('city', e.target.value)} data-testid="select-city"><option value="">Choose city</option><option>Lahore</option><option>Karachi</option><option>Islamabad</option><option>Rawalpindi</option><option>Faisalabad</option><option>Other Pakistan city</option></select></div><div className="field"><label htmlFor="notes">Notes <span>(optional)</span></label><input id="notes" value={shipping.notes} onChange={(e) => update('notes', e.target.value)} data-testid="input-notes" placeholder="Gate code, timing..." /></div></div>
+       <div className="form-row"><div className="field"><label htmlFor="city">City</label><select id="city" value={shipping.city} onChange={(e) => update('city', e.target.value)} data-testid="select-city"><option value="">Choose city</option><option>Lahore</option><option>Karachi</option><option>Islamabad</option><option>Rawalpindi</option><option>Faisalabad</option><option>Other Pakistan city</option></select></div><div className="field"><label htmlFor="province">Province</label><select id="province" value={shipping.province} onChange={(e) => update('province', e.target.value)} data-testid="select-province"><option value="">Choose province</option><option>Punjab</option><option>Sindh</option><option>Khyber Pakhtunkhwa</option><option>Balochistan</option><option>Islamabad Capital Territory</option><option>Gilgit-Baltistan</option><option>Azad Jammu and Kashmir</option></select></div></div>
+       <div className="form-row"><div className="field"><label htmlFor="postalCode">Postal code</label><input id="postalCode" value={shipping.postalCode} onChange={(e) => update('postalCode', e.target.value)} data-testid="input-postal-code" placeholder="54000" /></div><div className="field"><label htmlFor="notes">Notes <span>(optional)</span></label><input id="notes" value={shipping.notes} onChange={(e) => update('notes', e.target.value)} data-testid="input-notes" placeholder="Gate code, timing..." /></div></div>
+       <div className="payment-method"><div className="payment-label">Payment method</div><div className="payment-choice-grid"><label className={`payment-choice ${shipping.paymentMethod === 'cod' ? 'selected' : ''}`}><input type="radio" name="paymentMethod" value="cod" checked={shipping.paymentMethod === 'cod'} onChange={() => update('paymentMethod', 'cod')} /><span><strong>Cash on delivery</strong><small>Pay when your parcel arrives</small></span></label><label className={`payment-choice ${shipping.paymentMethod === 'card' ? 'selected' : ''}`}><input type="radio" name="paymentMethod" value="card" checked={shipping.paymentMethod === 'card'} onChange={() => update('paymentMethod', 'card')} /><span><strong>Debit or credit card</strong><small>Secure checkout through Stripe</small></span><CreditCard size={17} /></label></div></div>
+       {shipping.paymentMethod === 'card' && <p className="payment-note">You’ll be redirected to Stripe’s secure checkout to enter your card details.</p>}
       {error && <div className="field-error" data-testid="text-form-error">{error}</div>}
        <div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="submit" className="primary-button" disabled={isPending} data-testid="button-place-order">{isPending ? 'Sending your order...' : 'Place order'} <ArrowRight size={15} /></button></div>
     </form></div> : <><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.product.id} data-testid={`row-cart-${item.product.id}`}><div className={`mini-product-image ${item.product.category}`}><img className="mini-product-photo" src={item.product.image} alt="" /></div><div><div className="cart-item-name">{item.product.name}</div><div className="cart-item-meta">{item.product.size} · {formatPrice(item.product.price)}</div><div className="qty-control"><button type="button" onClick={() => onChangeQty(item.product.id, -1)} data-testid={`button-decrease-${item.product.id}`} aria-label="Decrease quantity"><Minus size={12} /></button><span data-testid={`text-quantity-${item.product.id}`}>{item.quantity}</span><button type="button" onClick={() => onChangeQty(item.product.id, 1)} data-testid={`button-increase-${item.product.id}`} aria-label="Increase quantity"><Plus size={12} /></button></div></div><div className="line-total">{formatPrice(item.product.price * item.quantity)}</div></div>)}</div><div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><p className="summary-note">{subtotal < 3000 ? `Add ${formatPrice(3000 - subtotal)} more for complimentary delivery.` : 'Complimentary delivery is included for this order.'}</p><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="button" className="primary-button" onClick={onCheckout} data-testid="button-checkout">{isAuthenticated ? 'Continue to checkout' : 'Log in to checkout'} <ArrowRight size={15} /></button></div></>}
@@ -120,30 +135,75 @@ function Home() {
   const [selected, setSelected] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
-  const [shipping, setShipping] = useState<Shipping>({ fullName: '', phone: '', address: '', city: '', notes: '' });
+  const [shipping, setShipping] = useState<Shipping>({ fullName: '', email: '', phone: '', address: '', city: '', province: '', postalCode: '', notes: '', paymentMethod: 'cod' });
   const [formError, setFormError] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const auth = useAuth();
   const createOrder = useCreateOrder();
+  const createCardCheckout = useCreateCardCheckout();
   const health = useHealthCheck();
   const billingHistory = useGetBillingHistory({ query: { queryKey: ['/api/orders'], enabled: auth.isAuthenticated && billingOpen } });
+  const adminOrders = useGetAdminOrders({ query: { queryKey: ['/api/admin/orders'], enabled: Boolean(auth.user?.isAdmin && adminOpen) } });
   const itemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
+  const isSubmitting = createOrder.isPending || createCardCheckout.isPending;
 
   useEffect(() => { if (cartOpen) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; return () => { document.body.style.overflow = ''; }; }, [cartOpen]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    const sessionId = params.get('session_id');
+    if (!payment || !auth.isAuthenticated) return;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    if (payment === 'cancelled') {
+      setFormError('Card payment was cancelled. Your order is still saved and can be retried from checkout.');
+      setCartOpen(true);
+      return;
+    }
+    if (payment === 'success' && sessionId) {
+      getPaymentStatus({ sessionId }).then((result) => {
+        setConfirmation(result.paid ? `Your card payment for order ${result.orderNumber} was successful.` : `Order ${result.orderNumber} is awaiting payment confirmation.`);
+        setCartOpen(true);
+        setCheckout(false);
+        queryClient.invalidateQueries({ queryKey: billingHistory.queryKey });
+      }).catch(() => {
+        setFormError('We received you back from Stripe, but could not confirm the payment yet.');
+        setCartOpen(true);
+      });
+    }
+  }, [auth.isAuthenticated]);
   const addToCart = (product: Product) => { setCart((current) => { const existing = current.find((item) => item.product.id === product.id); return existing ? current.map((item) => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { product, quantity: 1 }]; }); setCartOpen(true); };
   const changeQty = (id: string, delta: number) => setCart((current) => current.map((item) => item.product.id === id ? { ...item, quantity: item.quantity + delta } : item).filter((item) => item.quantity > 0));
   const openCatalog = () => document.getElementById('collection')?.scrollIntoView({ behavior: 'smooth' });
   const openCheckout = () => { if (!auth.isAuthenticated) { auth.login(); return; } setCheckout(true); setFormError(''); };
   const openBilling = () => { if (!auth.isAuthenticated) { auth.login(); return; } setBillingOpen(true); };
-  const submitOrder = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!auth.isAuthenticated) { auth.login(); return; } if (shipping.fullName.trim().length < 2 || shipping.phone.trim().length < 7 || shipping.address.trim().length < 5 || shipping.city.trim().length < 2) { setFormError('Please complete your name, phone, address and city.'); return; } setFormError(''); const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0); const deliveryFee = subtotal > 3000 ? 0 : 250; createOrder.mutate({ data: { items: cart.map((item) => ({ productId: item.product.id, productName: item.product.name, quantity: item.quantity, unitPrice: item.product.price })), shipping: { ...shipping, notes: shipping.notes || null }, subtotal, deliveryFee, total: subtotal + deliveryFee } }, { onSuccess: (result) => { setConfirmation(`Your order ${result.orderNumber} has been placed.`); setCart([]); queryClient.invalidateQueries({ queryKey: billingHistory.queryKey }); }, onError: () => setFormError('We couldn’t place that order just now. Please try again.') }); };
+  const openAdmin = () => { if (!auth.isAuthenticated) { auth.login(); return; } if (auth.user?.isAdmin) setAdminOpen(true); };
+  const submitOrder = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!auth.isAuthenticated) { auth.login(); return; }
+    if (shipping.fullName.trim().length < 2 || shipping.email.trim().length < 3 || shipping.phone.trim().length < 7 || shipping.address.trim().length < 5 || shipping.city.trim().length < 2 || shipping.province.trim().length < 2 || shipping.postalCode.trim().length < 3) {
+      setFormError('Please complete your name, email, phone, address, city, province and postal code.');
+      return;
+    }
+    setFormError('');
+    const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const deliveryFee = subtotal > 3000 ? 0 : 250;
+    const data = { items: cart.map((item) => ({ productId: item.product.id, productName: item.product.name, quantity: item.quantity, unitPrice: item.product.price })), shipping: { ...shipping, notes: shipping.notes || null }, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: shipping.paymentMethod };
+    const onSuccess = (result: { orderNumber: string }) => { setConfirmation(`Your order ${result.orderNumber} has been placed.`); setCart([]); queryClient.invalidateQueries({ queryKey: billingHistory.queryKey }); };
+    if (shipping.paymentMethod === 'card') {
+      createCardCheckout.mutate({ data }, { onSuccess: (result) => { window.location.href = result.checkoutUrl; }, onError: () => setFormError('We couldn’t start secure card checkout just now. Please try again.') });
+    } else {
+      createOrder.mutate({ data }, { onSuccess, onError: () => setFormError('We couldn’t place that order just now. Please try again.') });
+    }
+  };
   const closeCart = () => { setCartOpen(false); setCheckout(false); };
   return <div className="storefront">
     <div className="announcement">Free delivery across Pakistan on orders over Rs. 3,000</div>
     <header className="site-header">
       <button className="mobile-menu" type="button" onClick={openCatalog} data-testid="button-mobile-menu" aria-label="Browse collection"><Menu size={20} /></button>
       <button className="logo-crop" type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} data-testid="button-logo-home" aria-label="Clensory home"><img src={logo} alt="Clensory Pakistan" /></button>
-      <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button></nav>
+       <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button>{auth.user?.isAdmin && <button type="button" onClick={openAdmin} data-testid="link-track-orders">Track orders</button>}</nav>
       <div className="header-tools">{auth.isAuthenticated ? <button type="button" className="header-action account-action" onClick={auth.logout} data-testid="button-log-out" title="Log out"><LogOut size={14} /> Log out</button> : <button type="button" className="header-action account-action" onClick={auth.login} data-testid="button-log-in" title="Log in or create an account"><LogIn size={14} /> Log in</button>}<span className="header-action service-status" aria-label="Service status"><span className="health-dot" />{health.isLoading ? 'Here for you' : 'Pakistan made'}</span><button type="button" className="header-action bag-button" onClick={() => setCartOpen(true)} data-testid="button-open-cart"><ShoppingBag size={18} /><span>Bag</span>{itemCount > 0 && <span className="bag-count" data-testid="text-cart-count">{itemCount}</span>}</button></div>
     </header>
     <main>
@@ -161,8 +221,9 @@ function Home() {
     </main>
     <footer className="site-footer"><div className="footer-logo">Clensory.</div><div>Made in Pakistan · Clean, thoughtfully.</div><div>© 2024 Clensory</div></footer>
     {selected && <ProductDetail product={selected} onClose={() => setSelected(null)} onAdd={addToCart} />}
-     {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={createOrder.isPending} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
+      {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={isSubmitting} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
      {billingOpen && auth.user && <BillingHistoryWindow records={billingHistory.data ?? []} isLoading={billingHistory.isLoading} isError={billingHistory.isError} user={auth.user} onClose={() => setBillingOpen(false)} />}
+      {adminOpen && auth.user?.isAdmin && <AdminOrderTrackingWindow records={adminOrders.data ?? []} isLoading={adminOrders.isLoading} isError={adminOrders.isError} onClose={() => setAdminOpen(false)} />}
   </div>;
 }
 

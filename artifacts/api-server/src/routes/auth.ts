@@ -1,7 +1,7 @@
 import {
   GetCurrentAuthUserResponse,
 } from "@workspace/api-zod";
-import { db, usersTable } from "@workspace/db";
+import { db, isAdminEmail, usersTable } from "@workspace/db";
 import { Router, type IRouter, type Request, type Response } from "express";
 import * as oidc from "openid-client";
 import {
@@ -138,6 +138,7 @@ router.get("/callback", async (req, res) => {
       firstName: dbUser.firstName,
       lastName: dbUser.lastName,
       profileImageUrl: dbUser.profileImageUrl,
+      isAdmin: isAdminEmail(dbUser.email),
     },
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,

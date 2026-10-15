@@ -31,9 +31,15 @@ export const GetBillingHistoryResponseItem = zod.object({
   "phone": zod.string(),
   "address": zod.string(),
   "city": zod.string(),
+  "email": zod.string(),
+  "province": zod.string(),
+  "postalCode": zod.string(),
   "subtotal": zod.number(),
   "deliveryFee": zod.number(),
   "total": zod.number(),
+  "paymentMethod": zod.enum(['cod', 'card']),
+  "paymentStatus": zod.string(),
+  "orderStatus": zod.string(),
   "items": zod.array(zod.object({
   "productId": zod.string(),
   "productName": zod.string(),
@@ -62,6 +68,12 @@ export const createOrderBodyShippingAddressMin = 5;
 
 export const createOrderBodyShippingCityMin = 2;
 
+export const createOrderBodyShippingEmailMin = 3;
+
+export const createOrderBodyShippingProvinceMin = 2;
+
+export const createOrderBodyShippingPostalCodeMin = 3;
+
 export const createOrderBodySubtotalMin = 0;
 
 export const createOrderBodyDeliveryFeeMin = 0;
@@ -82,17 +94,128 @@ export const CreateOrderBody = zod.object({
   "phone": zod.string().min(createOrderBodyShippingPhoneMin),
   "address": zod.string().min(createOrderBodyShippingAddressMin),
   "city": zod.string().min(createOrderBodyShippingCityMin),
+  "email": zod.string().min(createOrderBodyShippingEmailMin),
+  "province": zod.string().min(createOrderBodyShippingProvinceMin),
+  "postalCode": zod.string().min(createOrderBodyShippingPostalCodeMin),
   "notes": zod.string().nullish()
 }),
   "subtotal": zod.number().min(createOrderBodySubtotalMin),
   "deliveryFee": zod.number().min(createOrderBodyDeliveryFeeMin),
-  "total": zod.number().min(createOrderBodyTotalMin)
+  "total": zod.number().min(createOrderBodyTotalMin),
+  "paymentMethod": zod.enum(['cod', 'card'])
 })
 
 export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string(),
   "message": zod.string()
 })
+
+
+/**
+ * @summary Create a Stripe card checkout session
+ */
+
+
+
+export const createCardCheckoutBodyItemsItemUnitPriceMin = 0;
+
+
+export const createCardCheckoutBodyShippingFullNameMin = 2;
+
+export const createCardCheckoutBodyShippingPhoneMin = 7;
+
+export const createCardCheckoutBodyShippingAddressMin = 5;
+
+export const createCardCheckoutBodyShippingCityMin = 2;
+
+export const createCardCheckoutBodyShippingEmailMin = 3;
+
+export const createCardCheckoutBodyShippingProvinceMin = 2;
+
+export const createCardCheckoutBodyShippingPostalCodeMin = 3;
+
+export const createCardCheckoutBodySubtotalMin = 0;
+
+export const createCardCheckoutBodyDeliveryFeeMin = 0;
+
+export const createCardCheckoutBodyTotalMin = 0;
+
+
+
+export const CreateCardCheckoutBody = zod.object({
+  "items": zod.array(zod.object({
+  "productId": zod.string().min(1),
+  "productName": zod.string().min(1),
+  "quantity": zod.number().min(1),
+  "unitPrice": zod.number().min(createCardCheckoutBodyItemsItemUnitPriceMin)
+})).min(1),
+  "shipping": zod.object({
+  "fullName": zod.string().min(createCardCheckoutBodyShippingFullNameMin),
+  "phone": zod.string().min(createCardCheckoutBodyShippingPhoneMin),
+  "address": zod.string().min(createCardCheckoutBodyShippingAddressMin),
+  "city": zod.string().min(createCardCheckoutBodyShippingCityMin),
+  "email": zod.string().min(createCardCheckoutBodyShippingEmailMin),
+  "province": zod.string().min(createCardCheckoutBodyShippingProvinceMin),
+  "postalCode": zod.string().min(createCardCheckoutBodyShippingPostalCodeMin),
+  "notes": zod.string().nullish()
+}),
+  "subtotal": zod.number().min(createCardCheckoutBodySubtotalMin),
+  "deliveryFee": zod.number().min(createCardCheckoutBodyDeliveryFeeMin),
+  "total": zod.number().min(createCardCheckoutBodyTotalMin),
+  "paymentMethod": zod.enum(['cod', 'card'])
+})
+
+export const CreateCardCheckoutResponse = zod.object({
+  "orderNumber": zod.string(),
+  "checkoutUrl": zod.string(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Confirm the status of a Stripe checkout session
+ */
+export const GetPaymentStatusQueryParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const GetPaymentStatusResponse = zod.object({
+  "orderNumber": zod.string(),
+  "paymentStatus": zod.string(),
+  "orderStatus": zod.string(),
+  "paid": zod.boolean()
+})
+
+
+/**
+ * @summary Get every order for an admin account
+ */
+export const GetAdminOrdersResponseItem = zod.object({
+  "orderNumber": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "fullName": zod.string(),
+  "phone": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "email": zod.string(),
+  "province": zod.string(),
+  "postalCode": zod.string(),
+  "subtotal": zod.number(),
+  "deliveryFee": zod.number(),
+  "total": zod.number(),
+  "paymentMethod": zod.enum(['cod', 'card']),
+  "paymentStatus": zod.string(),
+  "orderStatus": zod.string(),
+  "items": zod.array(zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "quantity": zod.number(),
+  "unitPrice": zod.number()
+}))
+}).and(zod.object({
+  "customerEmail": zod.string()
+}))
+export const GetAdminOrdersResponse = zod.array(GetAdminOrdersResponseItem)
 
 
 /**
@@ -108,7 +231,8 @@ export const GetCurrentAuthUserResponse = zod.object({
   "email": zod.string().nullable(),
   "firstName": zod.string().nullable(),
   "lastName": zod.string().nullable(),
-  "profileImageUrl": zod.string().nullable()
+  "profileImageUrl": zod.string().nullable(),
+  "isAdmin": zod.boolean()
 }),zod.null()])
 })
 

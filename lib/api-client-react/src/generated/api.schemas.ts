@@ -29,9 +29,23 @@ export interface ShippingAddress {
   address: string;
   /** @minLength 2 */
   city: string;
+  /** @minLength 3 */
+  email: string;
+  /** @minLength 2 */
+  province: string;
+  /** @minLength 3 */
+  postalCode: string;
   /** @nullable */
   notes?: string | null;
 }
+
+export type OrderInputPaymentMethod = typeof OrderInputPaymentMethod[keyof typeof OrderInputPaymentMethod];
+
+
+export const OrderInputPaymentMethod = {
+  cod: 'cod',
+  card: 'card',
+} as const;
 
 export interface OrderInput {
   /** @minItems 1 */
@@ -43,6 +57,7 @@ export interface OrderInput {
   deliveryFee: number;
   /** @minimum 0 */
   total: number;
+  paymentMethod: OrderInputPaymentMethod;
 }
 
 export interface OrderConfirmation {
@@ -57,6 +72,14 @@ export interface BillingHistoryItem {
   unitPrice: number;
 }
 
+export type BillingHistoryRecordPaymentMethod = typeof BillingHistoryRecordPaymentMethod[keyof typeof BillingHistoryRecordPaymentMethod];
+
+
+export const BillingHistoryRecordPaymentMethod = {
+  cod: 'cod',
+  card: 'card',
+} as const;
+
 export interface BillingHistoryRecord {
   orderNumber: string;
   createdAt: string;
@@ -64,13 +87,38 @@ export interface BillingHistoryRecord {
   phone: string;
   address: string;
   city: string;
+  email: string;
+  province: string;
+  postalCode: string;
   subtotal: number;
   deliveryFee: number;
   total: number;
+  paymentMethod: BillingHistoryRecordPaymentMethod;
+  paymentStatus: string;
+  orderStatus: string;
   items: BillingHistoryItem[];
 }
 
 export type BillingHistoryResponse = BillingHistoryRecord[];
+
+export type AdminOrderRecord = BillingHistoryRecord & {
+  customerEmail: string;
+};
+
+export type AdminOrdersResponse = AdminOrderRecord[];
+
+export interface CardCheckoutResponse {
+  orderNumber: string;
+  checkoutUrl: string;
+  message: string;
+}
+
+export interface PaymentStatusResponse {
+  orderNumber: string;
+  paymentStatus: string;
+  orderStatus: string;
+  paid: boolean;
+}
 
 export interface AuthUser {
   id: string;
@@ -82,6 +130,7 @@ export interface AuthUser {
   lastName: string | null;
   /** @nullable */
   profileImageUrl: string | null;
+  isAdmin: boolean;
 }
 
 export interface AuthUserEnvelope {
@@ -93,6 +142,10 @@ export interface ErrorResponse {
 }
 
 export type AuthorizationSessionHeaderParameter = string;
+
+export type GetPaymentStatusParams = {
+sessionId: string;
+};
 
 export type BeginBrowserLoginParams = {
 returnTo?: string;

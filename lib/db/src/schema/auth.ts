@@ -30,3 +30,12 @@ export const usersTable = pgTable("users", {
 
 export type UpsertUser = typeof usersTable.$inferInsert;
 export type User = typeof usersTable.$inferSelect;
+
+export const ADMIN_EMAILS = new Set([
+  "clensory.pk@gmail.com",
+  "reebo.nadeem@gmail.com",
+]);
+
+export function isAdminEmail(email: string | null | undefined): boolean {
+  return Boolean(email && ADMIN_EMAILS.has(email.trim().toLowerCase()));
+}

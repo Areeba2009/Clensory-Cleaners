@@ -20,14 +20,18 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminOrdersResponse,
   AuthUserEnvelope,
   BeginBrowserLoginParams,
   BillingHistoryResponse,
+  CardCheckoutResponse,
   ErrorResponse,
+  GetPaymentStatusParams,
   HealthStatus,
   LogoutBrowserSessionParams,
   OrderConfirmation,
-  OrderInput
+  OrderInput,
+  PaymentStatusResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -283,6 +287,238 @@ export const useCreateOrder = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getCreateOrderMutationOptions(options));
     }
+
+export const getCreateCardCheckoutUrl = () => {
+
+
+
+
+  return `/api/orders/checkout`
+}
+
+/**
+ * @summary Create a Stripe card checkout session
+ */
+export const createCardCheckout = async (orderInput: OrderInput, options?: Parameters<typeof customFetch>[1]): Promise<CardCheckoutResponse> => {
+
+  return customFetch<CardCheckoutResponse>(getCreateCardCheckoutUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(orderInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCardCheckoutMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCardCheckout>>, TError,{data: BodyType<OrderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCardCheckout>>, TError,{data: BodyType<OrderInput>}, TContext> => {
+
+const mutationKey = ['createCardCheckout'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCardCheckout>>, {data: BodyType<OrderInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCardCheckout(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCardCheckoutMutationResult = NonNullable<Awaited<ReturnType<typeof createCardCheckout>>>
+    export type CreateCardCheckoutMutationBody = BodyType<OrderInput>
+    export type CreateCardCheckoutMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a Stripe card checkout session
+ */
+export const useCreateCardCheckout = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCardCheckout>>, TError,{data: BodyType<OrderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCardCheckout>>,
+        TError,
+        {data: BodyType<OrderInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCardCheckoutMutationOptions(options));
+    }
+
+export const getGetPaymentStatusUrl = (params: GetPaymentStatusParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/orders/payment-status?${stringifiedParams}` : `/api/orders/payment-status`
+}
+
+/**
+ * @summary Confirm the status of a Stripe checkout session
+ */
+export const getPaymentStatus = async (params: GetPaymentStatusParams, options?: Parameters<typeof customFetch>[1]): Promise<PaymentStatusResponse> => {
+
+  return customFetch<PaymentStatusResponse>(getGetPaymentStatusUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPaymentStatusQueryKey = (params?: GetPaymentStatusParams,) => {
+    return [
+    `/api/orders/payment-status`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPaymentStatusQueryOptions = <TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<ErrorResponse>>(params: GetPaymentStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPaymentStatusQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPaymentStatus>>> = ({ signal }) => getPaymentStatus(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPaymentStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getPaymentStatus>>>
+export type GetPaymentStatusQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Confirm the status of a Stripe checkout session
+ */
+
+export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<ErrorResponse>>(
+ params: GetPaymentStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPaymentStatusQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAdminOrdersUrl = () => {
+
+
+
+
+  return `/api/admin/orders`
+}
+
+/**
+ * @summary Get every order for an admin account
+ */
+export const getAdminOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminOrdersResponse> => {
+
+  return customFetch<AdminOrdersResponse>(getGetAdminOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminOrdersQueryKey = () => {
+    return [
+    `/api/admin/orders`
+    ] as const;
+    }
+
+
+export const getGetAdminOrdersQueryOptions = <TData = Awaited<ReturnType<typeof getAdminOrders>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminOrdersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrders>>> = ({ signal }) => getAdminOrders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminOrders>>>
+export type GetAdminOrdersQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get every order for an admin account
+ */
+
+export function useGetAdminOrders<TData = Awaited<ReturnType<typeof getAdminOrders>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminOrdersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetCurrentAuthUserUrl = () => {
 

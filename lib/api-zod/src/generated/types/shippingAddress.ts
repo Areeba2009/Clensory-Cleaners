@@ -15,6 +15,12 @@ export interface ShippingAddress {
   address: string;
   /** @minLength 2 */
   city: string;
+  /** @minLength 3 */
+  email: string;
+  /** @minLength 2 */
+  province: string;
+  /** @minLength 3 */
+  postalCode: string;
   /** @nullable */
   notes?: string | null;
 }

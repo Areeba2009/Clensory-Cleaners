@@ -1,1 +1,2 @@
 - [OpenAPI/Zod compatibility](openapi-zod-compatibility.md) — verify generated numeric validators against the installed Zod major version after codegen.
+- [Stripe connector runtime](stripe-connector-runtime.md) — use the Replit connector proxy for app Stripe calls; the legacy sync credential lookup can block API startup.

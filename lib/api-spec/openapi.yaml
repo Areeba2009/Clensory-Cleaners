@@ -73,6 +73,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /orders/checkout:
+    post:
+      operationId: createCardCheckout
+      tags: [orders]
+      summary: Create a Stripe card checkout session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Stripe checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardCheckoutResponse"
+        "400":
+          description: Invalid order details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /orders/payment-status:
+    get:
+      operationId: getPaymentStatus
+      tags: [orders]
+      summary: Confirm the status of a Stripe checkout session
+      parameters:
+        - $ref: "#/components/parameters/SessionCookie"
+        - name: sessionId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentStatusResponse"
+        "400":
+          description: Missing or invalid checkout session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/orders:
+    get:
+      operationId: getAdminOrders
+      tags: [orders]
+      summary: Get every order for an admin account
+      parameters:
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "200":
+          description: All order receipts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrdersResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/user:
     get:
       tags: [Auth]
@@ -183,6 +270,15 @@ components:
         city:
           type: string
           minLength: 2
+        email:
+          type: string
+          minLength: 3
+        province:
+          type: string
+          minLength: 2
+        postalCode:
+          type: string
+          minLength: 3
         notes:
           type: ["string", "null"]
       required:
@@ -190,6 +286,9 @@ components:
         - phone
         - address
         - city
+        - email
+        - province
+        - postalCode
     OrderInput:
       type: object
       properties:
@@ -209,12 +308,16 @@ components:
         total:
           type: number
           minimum: 0
+        paymentMethod:
+          type: string
+          enum: [cod, card]
       required:
         - items
         - shipping
         - subtotal
         - deliveryFee
         - total
+        - paymentMethod
     OrderConfirmation:
       type: object
       properties:
@@ -257,12 +360,25 @@ components:
           type: string
         city:
           type: string
+        email:
+          type: string
+        province:
+          type: string
+        postalCode:
+          type: string
         subtotal:
           type: number
         deliveryFee:
           type: number
         total:
           type: number
+        paymentMethod:
+          type: string
+          enum: [cod, card]
+        paymentStatus:
+          type: string
+        orderStatus:
+          type: string
         items:
           type: array
           items:
@@ -274,14 +390,62 @@ components:
         - phone
         - address
         - city
+        - email
+        - province
+        - postalCode
         - subtotal
         - deliveryFee
         - total
+        - paymentMethod
+        - paymentStatus
+        - orderStatus
         - items
     BillingHistoryResponse:
       type: array
       items:
         $ref: "#/components/schemas/BillingHistoryRecord"
+    AdminOrderRecord:
+      allOf:
+        - $ref: "#/components/schemas/BillingHistoryRecord"
+      type: object
+      properties:
+        customerEmail:
+          type: string
+      required:
+        - customerEmail
+    AdminOrdersResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/AdminOrderRecord"
+    CardCheckoutResponse:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        checkoutUrl:
+          type: string
+        message:
+          type: string
+      required:
+        - orderNumber
+        - checkoutUrl
+        - message
+    PaymentStatusResponse:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        paymentStatus:
+          type: string
+        orderStatus:
+          type: string
+        paid:
+          type: boolean
+      required:
+        - orderNumber
+        - paymentStatus
+        - orderStatus
+        - paid
     AuthUser:
       type: object
       properties:
@@ -295,12 +459,15 @@ components:
           type: ["string", "null"]
         profileImageUrl:
           type: ["string", "null"]
+        isAdmin:
+          type: boolean
       required:
         - id
         - email
         - firstName
         - lastName
         - profileImageUrl
+        - isAdmin
     AuthUserEnvelope:
       type: object
       properties:

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BillingHistoryItem } from './billingHistoryItem';
+import type { BillingHistoryRecordPaymentMethod } from './billingHistoryRecordPaymentMethod';
 
 export interface BillingHistoryRecord {
   orderNumber: string;
@@ -14,8 +15,14 @@ export interface BillingHistoryRecord {
   phone: string;
   address: string;
   city: string;
+  email: string;
+  province: string;
+  postalCode: string;
   subtotal: number;
   deliveryFee: number;
   total: number;
+  paymentMethod: BillingHistoryRecordPaymentMethod;
+  paymentStatus: string;
+  orderStatus: string;
   items: BillingHistoryItem[];
 }

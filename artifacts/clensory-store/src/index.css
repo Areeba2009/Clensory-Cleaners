@@ -225,6 +225,18 @@
 .field textarea { resize: vertical; min-height: 68px; }
 .field-error { color: hsl(var(--destructive)); font-size: 10px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.payment-method { display: grid; gap: 9px; padding-top: 4px; }
+.payment-label { font-size: 10px; letter-spacing: .11em; text-transform: uppercase; font-weight: 700; }
+.payment-choice-grid { display: grid; gap: 8px; }
+.payment-choice { display: flex; align-items: center; gap: 10px; border: 1px solid hsl(var(--border)); padding: 12px; cursor: pointer; transition: border-color .2s, background .2s; }
+.payment-choice.selected { border-color: hsl(var(--accent)); background: rgba(184,102,69,.06); }
+.payment-choice input { accent-color: hsl(var(--accent)); }
+.payment-choice span { flex: 1; }
+.payment-choice strong, .payment-choice small { display: block; }
+.payment-choice strong { font-size: 12px; }
+.payment-choice small { color: hsl(var(--muted-foreground)); font-size: 10px; margin-top: 3px; }
+.payment-choice svg { color: hsl(var(--accent)); }
+.payment-note { color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.5; margin: -3px 0 0; }
 .back-link { border: 0; padding: 0; background: transparent; color: hsl(var(--muted-foreground)); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
 .order-success { min-height: 70vh; display: grid; align-content: center; text-align: center; padding: 20px; }
 .success-mark { width: 74px; height: 74px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
@@ -267,6 +279,13 @@
 .billing-breakdown { display: grid; gap: 5px; padding-top: 12px; border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 11px; }
 .billing-breakdown strong { color: hsl(var(--foreground)); font-weight: 600; }
 .billing-delivery { margin-top: 14px; color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.5; }
+.admin-orders-modal { width: min(900px, 100%); }
+.admin-order-record { display: grid; gap: 12px; }
+.admin-order-badges { display: flex; flex-wrap: wrap; gap: 7px; }
+.admin-order-badges span { padding: 5px 8px; border-radius: 999px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); font-size: 10px; letter-spacing: .04em; text-transform: capitalize; }
+.admin-customer { display: grid; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid hsl(var(--border)); }
+.admin-customer strong { font-size: 13px; }
+.admin-customer span { color: hsl(var(--muted-foreground)); font-size: 11px; }
 .billing-state { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 80px 20px 55px; color: hsl(var(--muted-foreground)); }
 .billing-state svg { color: hsl(var(--secondary)); }
 .billing-state h3 { color: hsl(var(--foreground)); font-family: var(--app-font-serif); font-size: 31px; margin: 3px 0 0; }
