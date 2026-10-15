@@ -137,6 +137,7 @@
 .bottle { position: relative; width: 155px; height: 305px; border-radius: 22px 22px 16px 16px; background: #d0d7ba; box-shadow: 14px 20px 0 rgba(35,31,32,.11); display: flex; align-items: center; justify-content: center; }
 .product-photo { width: auto; max-width: 76%; height: 96%; object-fit: contain; display: block; transition: transform .35s ease, filter .35s ease; }
 .product-image:hover .product-photo { transform: scale(1.035); filter: saturate(1.04); }
+.product-image:not(.detail-visual) .product-photo { max-width: 60%; height: 82%; }
 .detail-visual .product-photo { padding: 8px; }
 .bottle:before { content: ''; position: absolute; width: 75px; height: 34px; background: #231f20; border-radius: 6px 6px 2px 2px; top: -27px; }
 .bottle:after { content: ''; position: absolute; width: 108px; height: 120px; background: #f1f4e5; border: 1px solid rgba(35,31,32,.12); top: 91px; }
