@@ -188,6 +188,24 @@ export const GetPaymentStatusResponse = zod.object({
 
 
 /**
+ * @summary Expire an unpaid Stripe checkout session after customer cancellation
+ */
+
+
+
+export const CancelCardOrderBody = zod.object({
+  "orderNumber": zod.string().min(1)
+})
+
+export const CancelCardOrderResponse = zod.object({
+  "orderNumber": zod.string(),
+  "paymentStatus": zod.string(),
+  "orderStatus": zod.string(),
+  "paid": zod.boolean()
+})
+
+
+/**
  * @summary Get every order for an admin account
  */
 export const GetAdminOrdersResponseItem = zod.object({

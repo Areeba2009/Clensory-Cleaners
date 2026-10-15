@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request as ExpressRequest } from "express";
-import { CreateOrderBody } from "@workspace/api-zod";
+import { CancelCardOrderBody, CreateOrderBody } from "@workspace/api-zod";
 import { db, isAdminEmail, orderItemsTable, ordersTable } from "@workspace/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../lib/stripeClient";
@@ -219,6 +219,95 @@ router.get("/orders/payment-status", async (req, res) => {
   } catch (error) {
     req.log.error({ err: error }, "Unable to confirm Stripe payment");
     return res.status(500).json({ error: "We couldn't confirm the payment right now." });
+  }
+});
+
+router.post("/orders/cancel-card", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Please log in to update this payment." });
+    return;
+  }
+
+  const parsed = CancelCardOrderBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "An order number is required." });
+    return;
+  }
+
+  try {
+    const [order] = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.orderNumber, parsed.data.orderNumber));
+    if (!order || order.userId !== req.user.id) {
+      res.status(404).json({ error: "Order not found." });
+      return;
+    }
+    if (order.paymentMethod !== "card" || !order.stripeCheckoutSessionId) {
+      res.status(409).json({ error: "This order has no active card checkout to cancel." });
+      return;
+    }
+
+    if (order.paymentStatus === "paid") {
+      res.json({
+        orderNumber: order.orderNumber,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        paid: true,
+      });
+      return;
+    }
+
+    if (order.paymentStatus === "cancelled") {
+      res.json({
+        orderNumber: order.orderNumber,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        paid: false,
+      });
+      return;
+    }
+
+    const stripe = getUncachableStripeClient();
+    const session = await stripe.checkout.sessions.retrieve(order.stripeCheckoutSessionId);
+    if (session.payment_status === "paid") {
+      await db.update(ordersTable).set({
+        paymentStatus: "paid",
+        orderStatus: "paid",
+      }).where(eq(ordersTable.id, order.id));
+      res.json({
+        orderNumber: order.orderNumber,
+        paymentStatus: "paid",
+        orderStatus: "paid",
+        paid: true,
+      });
+      return;
+    }
+    if (session.status === "complete") {
+      res.status(409).json({ error: "This payment is still processing. Check billing history before trying again." });
+      return;
+    }
+    if (session.status === "open") {
+      await stripe.checkout.sessions.expire(session.id);
+    } else if (session.status !== "expired") {
+      res.status(409).json({ error: "We couldn't confirm that this checkout is safe to retry yet." });
+      return;
+    }
+
+    await db.update(ordersTable).set({
+      paymentStatus: "cancelled",
+      orderStatus: "payment_cancelled",
+    }).where(eq(ordersTable.id, order.id));
+
+    res.json({
+      orderNumber: order.orderNumber,
+      paymentStatus: "cancelled",
+      orderStatus: "payment_cancelled",
+      paid: false,
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "Unable to cancel Stripe checkout session");
+    res.status(500).json({ error: "We couldn't update that payment yet. Please try again." });
   }
 });
 

@@ -1,4 +1,5 @@
 import type { AuthUser } from "@workspace/api-zod";
+import { isAdminEmail } from "@workspace/db";
 import type { NextFunction, Request, Response } from "express";
 import * as oidc from "openid-client";
 import {
@@ -66,6 +67,9 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     return;
   }
 
-  req.user = refreshed.user;
+  req.user = {
+    ...refreshed.user,
+    isAdmin: isAdminEmail(refreshed.user.email),
+  };
   next();
 }

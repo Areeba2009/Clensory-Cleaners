@@ -16,6 +16,7 @@ export * from './billingHistoryItem';
 export * from './billingHistoryRecord';
 export * from './billingHistoryRecordPaymentMethod';
 export * from './billingHistoryResponse';
+export * from './cancelCardOrderInput';
 export * from './cardCheckoutResponse';
 export * from './errorResponse';
 export * from './getPaymentStatusParams';

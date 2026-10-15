@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronDown, CreditCard, Leaf, LogIn, LogOut, Menu, Minus, Plus, Receipt, ShieldCheck, ShoppingBag, Star, Truck, X } from 'lucide-react';
-import { getPaymentStatus, useCreateCardCheckout, useCreateOrder, useGetAdminOrders, useGetBillingHistory, useHealthCheck, type AdminOrderRecord, type BillingHistoryRecord } from '@workspace/api-client-react';
+import { getPaymentStatus, useCancelCardOrder, useCreateCardCheckout, useCreateOrder, useGetAdminOrders, useGetBillingHistory, useHealthCheck, type AdminOrderRecord, type BillingHistoryRecord } from '@workspace/api-client-react';
 import { useAuth } from '@workspace/replit-auth-web';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -24,6 +24,68 @@ const products: Product[] = [
   { id: 'clenso', name: 'Clenso', eyebrow: 'Dishwash cleaner', description: 'A bright, hardworking dishwash cleaner for the daily pile, made to leave plates fresh and hands comfortable.', price: 760, size: '500 ml', image: clensoPhoto, color: '#e8c947', category: 'clenso', rating: 4.9, reviewCount: 38, featured: true, reviews: [{ author: 'Ayesha, Lahore', text: 'A little goes a long way, and it cuts through the after-dinner pile.' }, { author: 'Mariam, Karachi', text: 'Fresh dishes without that sharp chemical smell.' }] },
   { id: 'laundro', name: 'Laundro', eyebrow: 'Laundry detergent', description: 'A gentle everyday laundry detergent that lifts the day away and leaves clothes feeling clean, soft and ready to wear.', price: 1250, size: '1 litre', image: laundroPhoto, color: '#76a9d4', category: 'laundro', rating: 4.8, reviewCount: 24, featured: true, reviews: [{ author: 'Sana, Islamabad', text: 'Our clothes come out fresh without an overpowering scent.' }, { author: 'Hiba, Rawalpindi', text: 'It feels gentle on everyday fabrics and lasts ages.' }] },
 ];
+
+const emptyShipping: Shipping = { fullName: '', email: '', phone: '', address: '', city: '', province: '', postalCode: '', notes: '', paymentMethod: 'cod' };
+const checkoutDraftStorageKey = 'clensory-checkout-draft';
+
+function readCheckoutDraft(): { cart: CartItem[]; shipping: Shipping; retryBlocked: boolean; recoveryOrderNumber: string | null } {
+  const emptyDraft = { cart: [], shipping: emptyShipping, retryBlocked: false, recoveryOrderNumber: null };
+  try {
+    const stored = sessionStorage.getItem(checkoutDraftStorageKey);
+    if (!stored) return emptyDraft;
+    const parsed = JSON.parse(stored) as { cart?: unknown; shipping?: unknown; retryBlocked?: unknown; recoveryOrderNumber?: unknown };
+    const cart = Array.isArray(parsed.cart)
+      ? parsed.cart.flatMap((entry): CartItem[] => {
+          if (!entry || typeof entry !== 'object') return [];
+          const savedItem = entry as { productId?: unknown; quantity?: unknown };
+          const product = products.find((candidate) => candidate.id === savedItem.productId);
+          const quantity = Number(savedItem.quantity);
+          return product && Number.isFinite(quantity) && quantity > 0
+            ? [{ product, quantity: Math.floor(quantity) }]
+            : [];
+        })
+      : [];
+    const savedShipping = parsed.shipping && typeof parsed.shipping === 'object'
+      ? parsed.shipping as Partial<Shipping>
+      : {};
+    const text = (value: unknown) => typeof value === 'string' ? value : '';
+    return {
+      cart,
+      retryBlocked: parsed.retryBlocked === true,
+      recoveryOrderNumber: typeof parsed.recoveryOrderNumber === 'string' ? parsed.recoveryOrderNumber : null,
+      shipping: {
+        fullName: text(savedShipping.fullName),
+        email: text(savedShipping.email),
+        phone: text(savedShipping.phone),
+        address: text(savedShipping.address),
+        city: text(savedShipping.city),
+        province: text(savedShipping.province),
+        postalCode: text(savedShipping.postalCode),
+        notes: text(savedShipping.notes),
+        paymentMethod: savedShipping.paymentMethod === 'card' ? 'card' : 'cod',
+      },
+    };
+  } catch {
+    return emptyDraft;
+  }
+}
+
+function persistCheckoutDraft(cart: CartItem[], shipping: Shipping, retryBlocked = false, recoveryOrderNumber: string | null = null) {
+  try {
+    if (cart.length === 0) {
+      sessionStorage.removeItem(checkoutDraftStorageKey);
+      return;
+    }
+    sessionStorage.setItem(checkoutDraftStorageKey, JSON.stringify({
+      cart: cart.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+      shipping,
+      retryBlocked,
+      recoveryOrderNumber,
+    }));
+  } catch {
+    // Checkout remains available if the browser blocks session storage.
+  }
+}
 
 const formatPrice = (price: number) => `Rs. ${price.toLocaleString('en-PK')}`;
 
@@ -106,8 +168,8 @@ function AdminOrderTrackingWindow({ records, isLoading, isError, onClose }: {
   </div>;
 }
 
-function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack, shipping, setShipping, onSubmit, isPending, error, confirmation, onContinue, isAuthenticated }: {
-  items: CartItem[]; onClose: () => void; onChangeQty: (id: string, delta: number) => void; onCheckout: () => void; checkout: boolean; onBack: () => void; shipping: Shipping; setShipping: (shipping: Shipping) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isPending: boolean; error: string; confirmation: string; onContinue: () => void; isAuthenticated: boolean;
+function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack, shipping, setShipping, onSubmit, isPending, retryBlocked, onViewBilling, onCheckPrevious, canCheckPrevious, error, confirmation, onContinue, isAuthenticated }: {
+  items: CartItem[]; onClose: () => void; onChangeQty: (id: string, delta: number) => void; onCheckout: () => void; checkout: boolean; onBack: () => void; shipping: Shipping; setShipping: (shipping: Shipping) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isPending: boolean; retryBlocked: boolean; onViewBilling: () => void; onCheckPrevious: () => void; canCheckPrevious: boolean; error: string; confirmation: string; onContinue: () => void; isAuthenticated: boolean;
 }) {
   const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const delivery = subtotal > 3000 || subtotal === 0 ? 0 : 250;
@@ -123,33 +185,62 @@ function CartDrawer({ items, onClose, onChangeQty, onCheckout, checkout, onBack,
        <div className="form-row"><div className="field"><label htmlFor="city">City</label><select id="city" value={shipping.city} onChange={(e) => update('city', e.target.value)} data-testid="select-city"><option value="">Choose city</option><option>Lahore</option><option>Karachi</option><option>Islamabad</option><option>Rawalpindi</option><option>Faisalabad</option><option>Other Pakistan city</option></select></div><div className="field"><label htmlFor="province">Province</label><select id="province" value={shipping.province} onChange={(e) => update('province', e.target.value)} data-testid="select-province"><option value="">Choose province</option><option>Punjab</option><option>Sindh</option><option>Khyber Pakhtunkhwa</option><option>Balochistan</option><option>Islamabad Capital Territory</option><option>Gilgit-Baltistan</option><option>Azad Jammu and Kashmir</option></select></div></div>
        <div className="form-row"><div className="field"><label htmlFor="postalCode">Postal code</label><input id="postalCode" value={shipping.postalCode} onChange={(e) => update('postalCode', e.target.value)} data-testid="input-postal-code" placeholder="54000" /></div><div className="field"><label htmlFor="notes">Notes <span>(optional)</span></label><input id="notes" value={shipping.notes} onChange={(e) => update('notes', e.target.value)} data-testid="input-notes" placeholder="Gate code, timing..." /></div></div>
        <div className="payment-method"><div className="payment-label">Payment method</div><div className="payment-choice-grid"><label className={`payment-choice ${shipping.paymentMethod === 'cod' ? 'selected' : ''}`}><input type="radio" name="paymentMethod" value="cod" checked={shipping.paymentMethod === 'cod'} onChange={() => update('paymentMethod', 'cod')} /><span><strong>Cash on delivery</strong><small>Pay when your parcel arrives</small></span></label><label className={`payment-choice ${shipping.paymentMethod === 'card' ? 'selected' : ''}`}><input type="radio" name="paymentMethod" value="card" checked={shipping.paymentMethod === 'card'} onChange={() => update('paymentMethod', 'card')} /><span><strong>Debit or credit card</strong><small>Secure checkout through Stripe</small></span><CreditCard size={17} /></label></div></div>
-       {shipping.paymentMethod === 'card' && <p className="payment-note">You’ll be redirected to Stripe’s secure checkout to enter your card details.</p>}
+        {shipping.paymentMethod === 'card' && <p className="payment-note">You’ll be redirected to Stripe’s secure checkout to enter your card details.</p>}
+        {retryBlocked && <div className="payment-retry-blocked" data-testid="text-payment-retry-blocked"><p>We couldn’t confirm that the previous card session is closed. Check your billing history before starting another payment.</p><div className="payment-retry-actions">{canCheckPrevious && <button type="button" className="secondary-button" onClick={onCheckPrevious} disabled={isPending} data-testid="button-recheck-card-payment">{isPending ? 'Checking payment...' : 'Check payment again'}</button>}<button type="button" className="secondary-button" onClick={onViewBilling} data-testid="button-check-billing-before-retry">View billing history</button></div></div>}
       {error && <div className="field-error" data-testid="text-form-error">{error}</div>}
-       <div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="submit" className="primary-button" disabled={isPending} data-testid="button-place-order">{isPending ? 'Sending your order...' : 'Place order'} <ArrowRight size={15} /></button></div>
+        <div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="submit" className="primary-button" disabled={isPending || retryBlocked} data-testid="button-place-order">{retryBlocked ? 'Check billing history first' : isPending ? 'Sending your order...' : 'Place order'} <ArrowRight size={15} /></button></div>
     </form></div> : <><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.product.id} data-testid={`row-cart-${item.product.id}`}><div className={`mini-product-image ${item.product.category}`}><img className="mini-product-photo" src={item.product.image} alt="" /></div><div><div className="cart-item-name">{item.product.name}</div><div className="cart-item-meta">{item.product.size} · {formatPrice(item.product.price)}</div><div className="qty-control"><button type="button" onClick={() => onChangeQty(item.product.id, -1)} data-testid={`button-decrease-${item.product.id}`} aria-label="Decrease quantity"><Minus size={12} /></button><span data-testid={`text-quantity-${item.product.id}`}>{item.quantity}</span><button type="button" onClick={() => onChangeQty(item.product.id, 1)} data-testid={`button-increase-${item.product.id}`} aria-label="Increase quantity"><Plus size={12} /></button></div></div><div className="line-total">{formatPrice(item.product.price * item.quantity)}</div></div>)}</div><div className="cart-summary"><div className="summary-row"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="summary-row"><span>Delivery</span><span>{delivery === 0 ? 'Complimentary' : formatPrice(delivery)}</span></div><p className="summary-note">{subtotal < 3000 ? `Add ${formatPrice(3000 - subtotal)} more for complimentary delivery.` : 'Complimentary delivery is included for this order.'}</p><div className="summary-row total"><span>Total</span><span>{formatPrice(total)}</span></div><button type="button" className="primary-button" onClick={onCheckout} data-testid="button-checkout">{isAuthenticated ? 'Continue to checkout' : 'Log in to checkout'} <ArrowRight size={15} /></button></div></>}
     </aside></>;
 }
 
 function Home() {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [initialDraft] = useState(readCheckoutDraft);
+  const [cart, setCart] = useState<CartItem[]>(initialDraft.cart);
   const [selected, setSelected] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
-  const [shipping, setShipping] = useState<Shipping>({ fullName: '', email: '', phone: '', address: '', city: '', province: '', postalCode: '', notes: '', paymentMethod: 'cod' });
+  const [shipping, setShipping] = useState<Shipping>(initialDraft.shipping);
   const [formError, setFormError] = useState('');
+  const [retryBlocked, setRetryBlocked] = useState(initialDraft.retryBlocked);
+  const [recoveryOrderNumber, setRecoveryOrderNumber] = useState<string | null>(initialDraft.recoveryOrderNumber);
   const [confirmation, setConfirmation] = useState('');
   const auth = useAuth();
+  const cancelCardOrder = useCancelCardOrder();
   const createOrder = useCreateOrder();
   const createCardCheckout = useCreateCardCheckout();
   const health = useHealthCheck();
   const billingHistory = useGetBillingHistory({ query: { queryKey: ['/api/orders'], enabled: auth.isAuthenticated && billingOpen } });
   const adminOrders = useGetAdminOrders({ query: { queryKey: ['/api/admin/orders'], enabled: Boolean(auth.user?.isAdmin && adminOpen) } });
   const itemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
-  const isSubmitting = createOrder.isPending || createCardCheckout.isPending;
+  const isSubmitting = createOrder.isPending || createCardCheckout.isPending || cancelCardOrder.isPending;
+
+  const checkCancelledOrder = (orderNumber: string) => {
+    cancelCardOrder.mutate({ data: { orderNumber } }, {
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: billingHistory.queryKey });
+        queryClient.invalidateQueries({ queryKey: adminOrders.queryKey });
+        setRecoveryOrderNumber(null);
+        setRetryBlocked(false);
+        if (result.paid) {
+          setConfirmation(`Your card payment for order ${result.orderNumber} was completed.`);
+          setCart([]);
+          setShipping(emptyShipping);
+          setCheckout(false);
+        } else {
+          setFormError('The cancelled checkout is closed. Your saved bag is ready to retry.');
+        }
+      },
+      onError: () => {
+        setFormError('We couldn’t confirm that the previous card session is closed. Check billing history before retrying to avoid a duplicate payment.');
+      },
+    });
+  };
 
   useEffect(() => { if (cartOpen) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; return () => { document.body.style.overflow = ''; }; }, [cartOpen]);
+  useEffect(() => { persistCheckoutDraft(cart, shipping, retryBlocked, recoveryOrderNumber); }, [cart, shipping, retryBlocked, recoveryOrderNumber]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
@@ -157,8 +248,18 @@ function Home() {
     if (!payment || !auth.isAuthenticated) return;
     window.history.replaceState({}, document.title, window.location.pathname);
     if (payment === 'cancelled') {
-      setFormError('Card payment was cancelled. Your order is still saved and can be retried from checkout.');
+      setRetryBlocked(true);
+      setFormError('Your card payment was cancelled. Your bag and details are saved so you can review them and retry.');
       setCartOpen(true);
+      setCheckout(true);
+      setConfirmation('');
+      const orderNumber = params.get('order');
+      if (orderNumber) {
+        setRecoveryOrderNumber(orderNumber);
+        checkCancelledOrder(orderNumber);
+      } else {
+        setFormError('We couldn’t locate the cancelled order. Check Billing history before retrying to avoid a duplicate payment.');
+      }
       return;
     }
     if (payment === 'success' && sessionId) {
@@ -166,7 +267,15 @@ function Home() {
         setConfirmation(result.paid ? `Your card payment for order ${result.orderNumber} was successful.` : `Order ${result.orderNumber} is awaiting payment confirmation.`);
         setCartOpen(true);
         setCheckout(false);
+        setFormError('');
+        if (result.paid) {
+          setCart([]);
+          setShipping(emptyShipping);
+          setRetryBlocked(false);
+          setRecoveryOrderNumber(null);
+        }
         queryClient.invalidateQueries({ queryKey: billingHistory.queryKey });
+        queryClient.invalidateQueries({ queryKey: adminOrders.queryKey });
       }).catch(() => {
         setFormError('We received you back from Stripe, but could not confirm the payment yet.');
         setCartOpen(true);
@@ -175,7 +284,7 @@ function Home() {
   }, [auth.isAuthenticated]);
   const addToCart = (product: Product) => { setCart((current) => { const existing = current.find((item) => item.product.id === product.id); return existing ? current.map((item) => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { product, quantity: 1 }]; }); setCartOpen(true); };
   const changeQty = (id: string, delta: number) => setCart((current) => current.map((item) => item.product.id === id ? { ...item, quantity: item.quantity + delta } : item).filter((item) => item.quantity > 0));
-  const openCatalog = () => document.getElementById('collection')?.scrollIntoView({ behavior: 'smooth' });
+  const openCatalog = () => { document.getElementById('collection')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); };
   const openCheckout = () => { if (!auth.isAuthenticated) { auth.login(); return; } setCheckout(true); setFormError(''); };
   const openBilling = () => { if (!auth.isAuthenticated) { auth.login(); return; } setBillingOpen(true); };
   const openAdmin = () => { if (!auth.isAuthenticated) { auth.login(); return; } if (auth.user?.isAdmin) setAdminOpen(true); };
@@ -190,22 +299,31 @@ function Home() {
     const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
     const deliveryFee = subtotal > 3000 ? 0 : 250;
     const data = { items: cart.map((item) => ({ productId: item.product.id, productName: item.product.name, quantity: item.quantity, unitPrice: item.product.price })), shipping: { ...shipping, notes: shipping.notes || null }, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: shipping.paymentMethod };
-    const onSuccess = (result: { orderNumber: string }) => { setConfirmation(`Your order ${result.orderNumber} has been placed.`); setCart([]); queryClient.invalidateQueries({ queryKey: billingHistory.queryKey }); };
+    const onSuccess = (result: { orderNumber: string }) => { setConfirmation(`Your order ${result.orderNumber} has been placed.`); setCart([]); setShipping(emptyShipping); queryClient.invalidateQueries({ queryKey: billingHistory.queryKey }); queryClient.invalidateQueries({ queryKey: adminOrders.queryKey }); };
     if (shipping.paymentMethod === 'card') {
+      persistCheckoutDraft(cart, shipping, retryBlocked, recoveryOrderNumber);
       createCardCheckout.mutate({ data }, { onSuccess: (result) => { window.location.href = result.checkoutUrl; }, onError: () => setFormError('We couldn’t start secure card checkout just now. Please try again.') });
     } else {
       createOrder.mutate({ data }, { onSuccess, onError: () => setFormError('We couldn’t place that order just now. Please try again.') });
     }
   };
   const closeCart = () => { setCartOpen(false); setCheckout(false); };
+  const viewBillingBeforeRetry = () => { closeCart(); openBilling(); };
   return <div className="storefront">
     <div className="announcement">Free delivery across Pakistan on orders over Rs. 3,000</div>
     <header className="site-header">
-      <button className="mobile-menu" type="button" onClick={openCatalog} data-testid="button-mobile-menu" aria-label="Browse collection"><Menu size={20} /></button>
+      <button className="mobile-menu" type="button" onClick={() => setMobileNavOpen((open) => !open)} data-testid="button-mobile-menu" aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileNavOpen} aria-controls="mobile-nav">{mobileNavOpen ? <X size={20} /> : <Menu size={20} />}</button>
       <button className="logo-crop" type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} data-testid="button-logo-home" aria-label="Clensory home"><img src={logo} alt="Clensory Pakistan" /></button>
-       <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button>{auth.user?.isAdmin && <button type="button" onClick={openAdmin} data-testid="link-track-orders">Track orders</button>}</nav>
-      <div className="header-tools">{auth.isAuthenticated ? <button type="button" className="header-action account-action" onClick={auth.logout} data-testid="button-log-out" title="Log out"><LogOut size={14} /> Log out</button> : <button type="button" className="header-action account-action" onClick={auth.login} data-testid="button-log-in" title="Log in or create an account"><LogIn size={14} /> Log in</button>}<span className="header-action service-status" aria-label="Service status"><span className="health-dot" />{health.isLoading ? 'Here for you' : 'Pakistan made'}</span><button type="button" className="header-action bag-button" onClick={() => setCartOpen(true)} data-testid="button-open-cart"><ShoppingBag size={18} /><span>Bag</span>{itemCount > 0 && <span className="bag-count" data-testid="text-cart-count">{itemCount}</span>}</button></div>
+        <nav className="main-nav" aria-label="Main navigation"><button type="button" onClick={openCatalog} data-testid="link-shop">Shop</button><button type="button" onClick={() => document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-our-approach">Our approach</button><button type="button" onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' })} data-testid="link-reviews">Reviews</button><button type="button" onClick={openBilling} data-testid="link-billing-history">Billing history</button>{auth.user?.isAdmin && <button type="button" onClick={openAdmin} data-testid="link-track-orders">Track orders</button>}</nav>
+       <div className="header-tools">{auth.isAuthenticated ? <button type="button" className="header-action account-action" onClick={() => { sessionStorage.removeItem(checkoutDraftStorageKey); auth.logout(); }} data-testid="button-log-out" title="Log out"><LogOut size={14} /> Log out</button> : <button type="button" className="header-action account-action" onClick={auth.login} data-testid="button-log-in" title="Log in or create an account"><LogIn size={14} /> Log in</button>}<span className="header-action service-status" aria-label="Service status"><span className="health-dot" />{health.isLoading ? 'Here for you' : 'Pakistan made'}</span><button type="button" className="header-action bag-button" onClick={() => setCartOpen(true)} data-testid="button-open-cart"><ShoppingBag size={18} /><span>Bag</span>{itemCount > 0 && <span className="bag-count" data-testid="text-cart-count">{itemCount}</span>}</button></div>
     </header>
+    <nav id="mobile-nav" className={`mobile-nav${mobileNavOpen ? ' open' : ''}`} aria-label="Mobile navigation" aria-hidden={!mobileNavOpen}>
+      <button type="button" onClick={openCatalog} data-testid="mobile-link-shop">Shop</button>
+      <button type="button" onClick={() => { document.getElementById('story')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); }} data-testid="mobile-link-our-approach">Our approach</button>
+      <button type="button" onClick={() => { document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' }); setMobileNavOpen(false); }} data-testid="mobile-link-reviews">Reviews</button>
+      <button type="button" onClick={() => { openBilling(); setMobileNavOpen(false); }} data-testid="mobile-link-billing-history">Billing history</button>
+      {auth.user?.isAdmin && <button type="button" onClick={() => { openAdmin(); setMobileNavOpen(false); }} data-testid="mobile-link-track-orders">Track orders</button>}
+    </nav>
     <main>
       <section className="hero">
         <div className="hero-copy"><div className="eyebrow">A calmer way to clean · from Pakistan</div><h1>Clean,<br /><em>thoughtfully.</em></h1><p className="hero-intro">Everyday home care, made with a lighter touch. Considered formulas, quiet scents and objects you’ll be happy to leave out.</p><button type="button" className="primary-button" onClick={openCatalog} data-testid="button-hero-shop">Shop the collection <ArrowRight size={16} /></button></div>
@@ -221,7 +339,7 @@ function Home() {
     </main>
     <footer className="site-footer"><div className="footer-logo">Clensory.</div><div>Made in Pakistan · Clean, thoughtfully.</div><div>© 2024 Clensory</div></footer>
     {selected && <ProductDetail product={selected} onClose={() => setSelected(null)} onAdd={addToCart} />}
-      {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={isSubmitting} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
+      {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={isSubmitting} retryBlocked={retryBlocked} onViewBilling={viewBillingBeforeRetry} onCheckPrevious={() => { if (recoveryOrderNumber) checkCancelledOrder(recoveryOrderNumber); }} canCheckPrevious={Boolean(recoveryOrderNumber)} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
      {billingOpen && auth.user && <BillingHistoryWindow records={billingHistory.data ?? []} isLoading={billingHistory.isLoading} isError={billingHistory.isError} user={auth.user} onClose={() => setBillingOpen(false)} />}
       {adminOpen && auth.user?.isAdmin && <AdminOrderTrackingWindow records={adminOrders.data ?? []} isLoading={adminOrders.isLoading} isError={adminOrders.isError} onClose={() => setAdminOpen(false)} />}
   </div>;

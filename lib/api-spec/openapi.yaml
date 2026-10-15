@@ -134,6 +134,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /orders/cancel-card:
+    post:
+      operationId: cancelCardOrder
+      tags: [orders]
+      summary: Expire an unpaid Stripe checkout session after customer cancellation
+      parameters:
+        - $ref: "#/components/parameters/SessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelCardOrderInput"
+      responses:
+        "200":
+          description: Card checkout cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentStatusResponse"
+        "400":
+          description: Invalid cancellation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Payment is already complete or processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/orders:
     get:
       operationId: getAdminOrders
@@ -446,6 +490,14 @@ components:
         - paymentStatus
         - orderStatus
         - paid
+    CancelCardOrderInput:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+          minLength: 1
+      required:
+        - orderNumber
     AuthUser:
       type: object
       properties:

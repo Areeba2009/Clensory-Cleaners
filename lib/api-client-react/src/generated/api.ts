@@ -24,6 +24,7 @@ import type {
   AuthUserEnvelope,
   BeginBrowserLoginParams,
   BillingHistoryResponse,
+  CancelCardOrderInput,
   CardCheckoutResponse,
   ErrorResponse,
   GetPaymentStatusParams,
@@ -442,6 +443,77 @@ export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPayment
 
 
 
+
+export const getCancelCardOrderUrl = () => {
+
+
+
+
+  return `/api/orders/cancel-card`
+}
+
+/**
+ * @summary Expire an unpaid Stripe checkout session after customer cancellation
+ */
+export const cancelCardOrder = async (cancelCardOrderInput: CancelCardOrderInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentStatusResponse> => {
+
+  return customFetch<PaymentStatusResponse>(getCancelCardOrderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cancelCardOrderInput)
+  }
+);}
+
+
+
+
+
+export const getCancelCardOrderMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCardOrder>>, TError,{data: BodyType<CancelCardOrderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelCardOrder>>, TError,{data: BodyType<CancelCardOrderInput>}, TContext> => {
+
+const mutationKey = ['cancelCardOrder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelCardOrder>>, {data: BodyType<CancelCardOrderInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  cancelCardOrder(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelCardOrderMutationResult = NonNullable<Awaited<ReturnType<typeof cancelCardOrder>>>
+    export type CancelCardOrderMutationBody = BodyType<CancelCardOrderInput>
+    export type CancelCardOrderMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Expire an unpaid Stripe checkout session after customer cancellation
+ */
+export const useCancelCardOrder = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCardOrder>>, TError,{data: BodyType<CancelCardOrderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelCardOrder>>,
+        TError,
+        {data: BodyType<CancelCardOrderInput>},
+        TContext
+      > => {
+      return useMutation(getCancelCardOrderMutationOptions(options));
+    }
 
 export const getGetAdminOrdersUrl = () => {
 

@@ -120,6 +120,11 @@ export interface PaymentStatusResponse {
   paid: boolean;
 }
 
+export interface CancelCardOrderInput {
+  /** @minLength 1 */
+  orderNumber: string;
+}
+
 export interface AuthUser {
   id: string;
   /** @nullable */
