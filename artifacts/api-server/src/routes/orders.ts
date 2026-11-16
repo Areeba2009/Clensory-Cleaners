@@ -2,8 +2,8 @@ import { Router, type IRouter, type Request as ExpressRequest } from "express";
 import { CancelCardOrderBody, CreateOrderBody } from "@workspace/api-zod";
 import { db, isAdminEmail, orderItemsTable, ordersTable } from "@workspace/db";
 import { desc, eq, inArray } from "drizzle-orm";
-import { getUncachableStripeClient } from "../lib/stripeClient";
-import { clensoryProductVariants, stripePriceIds } from "../lib/stripeCatalog";
+import { getSafepayBaseUrl, getSafepayClient } from "../lib/safepayClient";
+import { clensoryProductVariants } from "../lib/stripeCatalog";
 
 const router: IRouter = Router();
 
@@ -59,7 +59,7 @@ function orderReceipt(order: typeof ordersTable.$inferSelect, items: Array<typeo
 }
 
 function getStorefrontOrigin(req: ExpressRequest): string {
-  const configuredDomain = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  const configuredDomain = process.env.REPLIT_DOMAINS?.split(",")?.[0]?.trim();
   if (configuredDomain) return `https://${configuredDomain}`;
   const proto = req.headers["x-forwarded-proto"] || "http";
   const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
@@ -141,7 +141,6 @@ router.post("/orders", async (req, res) => {
   }
 
   const parsed = CreateOrderBody.safeParse(req.body);
-
   if (!parsed.success) {
     return res.status(400).json({
       error: "Please check your order and shipping details.",
@@ -185,49 +184,43 @@ router.post("/orders/checkout", async (req, res) => {
 
   try {
     const order = await insertOrder(req.user.id, orderData);
-    const stripe = await getUncachableStripeClient();
-    const lineItems: Array<{ price: string; quantity: number }> = [];
-    for (const item of orderData.items) {
-      const variant = clensoryProductVariants[item.productId as keyof typeof clensoryProductVariants];
-      if (!variant) {
-        return res.status(400).json({ error: "One of the selected products is not available for card checkout." });
-      }
-      lineItems.push({ price: variant.stripePriceId, quantity: item.quantity });
-    }
-    if (orderData.deliveryFee > 0) {
-      lineItems.push({ price: stripePriceIds.delivery, quantity: 1 });
-    }
+    const safepay = getSafepayClient();
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      line_items: lineItems,
-      customer_email: orderData.shipping.email,
-      success_url: `${getStorefrontOrigin(req)}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${getStorefrontOrigin(req)}/?payment=cancelled&order=${order.orderNumber}`,
-      metadata: {
-        orderId: String(order.id),
-        orderNumber: order.orderNumber,
-        userId: req.user.id,
-      },
+    // 1. Create Safepay payment tracker in PKR
+    const { token } = await safepay.payments.create({
+      amount: orderData.total,
+      currency: "PKR",
     });
 
-    await db.update(ordersTable).set({
-      stripeCheckoutSessionId: session.id,
-    }).where(eq(ordersTable.id, order.id));
-
-    if (!session.url) {
-      return res.status(500).json({ error: "Stripe did not return a checkout URL." });
+    if (!token) {
+      return res.status(500).json({ error: "Safepay did not return a payment token." });
     }
+
+    // 2. Store Safepay tracker token in existing session column
+    await db
+      .update(ordersTable)
+      .set({ stripeCheckoutSessionId: token })
+      .where(eq(ordersTable.id, order.id));
+
+    // 3. Generate Safepay hosted checkout URL
+    const origin = getStorefrontOrigin(req);
+    const checkoutUrl = safepay.checkout.create({
+      token,
+      orderId: order.orderNumber,
+      cancelUrl: `${origin}/?payment=cancelled&order=${order.orderNumber}`,
+      redirectUrl: `${origin}/?payment=success&session_id=${token}`,
+      source: "custom",
+      webhooks: false,
+    });
 
     return res.status(201).json({
       orderNumber: order.orderNumber,
-      checkoutUrl: session.url,
-      message: "Redirecting to secure card checkout.",
+      checkoutUrl,
+      message: "Redirecting to secure Safepay checkout.",
     });
   } catch (error) {
-    req.log.error({ err: error }, "Unable to create Stripe checkout session");
-    return res.status(500).json({ error: "We couldn't start card checkout right now. Please try again." });
+    req.log.error({ err: error }, "Unable to create Safepay checkout session");
+    return res.status(500).json({ error: "We couldn't start Safepay checkout right now. Please try again." });
   }
 });
 
@@ -239,17 +232,46 @@ router.get("/orders/payment-status", async (req, res) => {
   if (!sessionId) return res.status(400).json({ error: "A checkout session is required." });
 
   try {
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.stripeCheckoutSessionId, sessionId));
-    if (!order || order.userId !== req.user.id) return res.status(404).json({ error: "Payment session not found." });
-    const stripe = await getUncachableStripeClient();
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    const paid = session.payment_status === "paid";
-    const paymentStatus = paid ? "paid" : session.status === "expired" ? "failed" : "pending";
+    const [order] = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.stripeCheckoutSessionId, sessionId));
+
+    if (!order || order.userId !== req.user.id) {
+      return res.status(404).json({ error: "Payment session not found." });
+    }
+
+    if (order.paymentStatus === "paid") {
+      return res.json({
+        orderNumber: order.orderNumber,
+        paymentStatus: "paid",
+        orderStatus: order.orderStatus,
+        paid: true,
+      });
+    }
+
+    // Verify tracker state directly from Safepay API
+    const verifyRes = await fetch(`${getSafepayBaseUrl()}/reporter/api/v1/payments/${sessionId}`, {
+      headers: {
+        "X-SFPY-MERCHANT-SECRET": process.env.SAFEPAY_V1_SECRET || "",
+      },
+    });
+
+    let paid = false;
+    let state = "";
+    if (verifyRes.ok) {
+      const payload = (await verifyRes.json()) as { data?: { state?: string } };
+      state = payload?.data?.state || "";
+      paid = state === "TRACKER_ENDED";
+    }
+
+    const paymentStatus = paid ? "paid" : state === "TRACKER_CANCELLED" ? "failed" : "pending";
     const orderStatus = paid ? "paid" : paymentStatus === "failed" ? "payment_failed" : "awaiting_payment";
+
     await db.update(ordersTable).set({ paymentStatus, orderStatus }).where(eq(ordersTable.id, order.id));
     return res.json({ orderNumber: order.orderNumber, paymentStatus, orderStatus, paid });
   } catch (error) {
-    req.log.error({ err: error }, "Unable to confirm Stripe payment");
+    req.log.error({ err: error }, "Unable to confirm Safepay payment");
     return res.status(500).json({ error: "We couldn't confirm the payment right now." });
   }
 });
@@ -271,10 +293,12 @@ router.post("/orders/cancel-card", async (req, res): Promise<void> => {
       .select()
       .from(ordersTable)
       .where(eq(ordersTable.orderNumber, parsed.data.orderNumber));
+
     if (!order || order.userId !== req.user.id) {
       res.status(404).json({ error: "Order not found." });
       return;
     }
+
     if (order.paymentMethod !== "card" || !order.stripeCheckoutSessionId) {
       res.status(409).json({ error: "This order has no active card checkout to cancel." });
       return;
@@ -290,46 +314,13 @@ router.post("/orders/cancel-card", async (req, res): Promise<void> => {
       return;
     }
 
-    if (order.paymentStatus === "cancelled") {
-      res.json({
-        orderNumber: order.orderNumber,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.orderStatus,
-        paid: false,
-      });
-      return;
-    }
-
-    const stripe = getUncachableStripeClient();
-    const session = await stripe.checkout.sessions.retrieve(order.stripeCheckoutSessionId);
-    if (session.payment_status === "paid") {
-      await db.update(ordersTable).set({
-        paymentStatus: "paid",
-        orderStatus: "paid",
-      }).where(eq(ordersTable.id, order.id));
-      res.json({
-        orderNumber: order.orderNumber,
-        paymentStatus: "paid",
-        orderStatus: "paid",
-        paid: true,
-      });
-      return;
-    }
-    if (session.status === "complete") {
-      res.status(409).json({ error: "This payment is still processing. Check billing history before trying again." });
-      return;
-    }
-    if (session.status === "open") {
-      await stripe.checkout.sessions.expire(session.id);
-    } else if (session.status !== "expired") {
-      res.status(409).json({ error: "We couldn't confirm that this checkout is safe to retry yet." });
-      return;
-    }
-
-    await db.update(ordersTable).set({
-      paymentStatus: "cancelled",
-      orderStatus: "payment_cancelled",
-    }).where(eq(ordersTable.id, order.id));
+    await db
+      .update(ordersTable)
+      .set({
+        paymentStatus: "cancelled",
+        orderStatus: "payment_cancelled",
+      })
+      .where(eq(ordersTable.id, order.id));
 
     res.json({
       orderNumber: order.orderNumber,
@@ -338,7 +329,7 @@ router.post("/orders/cancel-card", async (req, res): Promise<void> => {
       paid: false,
     });
   } catch (error) {
-    req.log.error({ err: error }, "Unable to cancel Stripe checkout session");
+    req.log.error({ err: error }, "Unable to cancel Safepay checkout session");
     res.status(500).json({ error: "We couldn't update that payment yet. Please try again." });
   }
 });
@@ -352,10 +343,12 @@ router.get("/admin/orders", async (req, res) => {
     const items = orders.length
       ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((order) => order.id)))
       : [];
-    return res.json(orders.map((order) => ({
-      ...orderReceipt(order, items),
-      customerEmail: order.email,
-    })));
+    return res.json(
+      orders.map((order) => ({
+        ...orderReceipt(order, items),
+        customerEmail: order.email,
+      })),
+    );
   } catch (error) {
     req.log.error({ err: error }, "Unable to load admin order tracking");
     return res.status(500).json({ error: "We couldn't load tracked orders right now." });
