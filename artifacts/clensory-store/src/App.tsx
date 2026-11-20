@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronDown, CreditCard, Leaf, LogIn, LogOut, Menu, Minus, Plus, Receipt, ShieldCheck, ShoppingBag, Star, Truck, X } from 'lucide-react';
 import { getPaymentStatus, useCancelCardOrder, useCreateCardCheckout, useCreateOrder, useGetAdminOrders, useGetBillingHistory, useHealthCheck, type AdminOrderRecord, type BillingHistoryRecord } from '@workspace/api-client-react';
-import { useAuth } from '@workspace/replit-auth-web';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -11,6 +11,116 @@ import laundroPhoto from '@assets/0_Clenso_(12)_1786866511997.png';
 import clensoPhoto from '@assets/1_Clenso_(11)_1786866511998.png';
 
 const queryClient = new QueryClient();
+
+type AuthUser = {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+  isAdmin: boolean;
+};
+
+function useAuth() {
+  const qc = useQueryClient();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const { data, isLoading } = useQuery<{ user: AuthUser | null }>({
+    queryKey: ['/api/auth/user'],
+    queryFn: async () => {
+      const res = await fetch('/api/auth/user', { credentials: 'include' });
+      if (!res.ok) return { user: null };
+      return res.json();
+    },
+  });
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    await qc.invalidateQueries({ queryKey: ['/api/auth/user'] });
+  };
+
+  return {
+    user: data?.user ?? null,
+    isAuthenticated: Boolean(data?.user),
+    isLoading,
+    authModalOpen,
+    setAuthModalOpen,
+    login: () => setAuthModalOpen(true),
+    logout,
+    refreshUser: () => qc.invalidateQueries({ queryKey: ['/api/auth/user'] }),
+  };
+}
+
+function AuthModal({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password, firstName, lastName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Authentication failed.');
+      } else {
+        onSuccess();
+        onClose();
+      }
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="billing-modal-wrap" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <section className="billing-modal" style={{ maxWidth: 420 }}>
+        <div className="billing-head">
+          <div>
+            <div className="eyebrow">Clensory account</div>
+            <h2>{mode === 'login' ? 'Welcome back' : 'Create an account'}</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close"><X size={21} /></button>
+        </div>
+        <form className="checkout-form" onSubmit={handleSubmit}>
+          {mode === 'register' && (
+            <div className="form-row">
+              <div className="field"><label htmlFor="authFirst">First name</label><input id="authFirst" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Areeba" /></div>
+              <div className="field"><label htmlFor="authLast">Last name</label><input id="authLast" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Nadeem" /></div>
+            </div>
+          )}
+          <div className="field"><label htmlFor="authEmail">Email address</label><input id="authEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></div>
+          <div className="field"><label htmlFor="authPass">Password</label><input id="authPass" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" /></div>
+          {error && <div className="field-error">{error}</div>}
+          <button type="submit" className="primary-button" disabled={submitting} style={{ width: '100%' }}>
+            {submitting ? 'Please wait...' : mode === 'login' ? 'Log in' : 'Create account'} <ArrowRight size={15} />
+          </button>
+          <p style={{ textAlign: 'center', marginTop: 12, fontSize: 13 }}>
+            {mode === 'login' ? 'New to Clensory? ' : 'Already have an account? '}
+            <button type="button" className="back-link" style={{ display: 'inline' }} onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>
+              {mode === 'login' ? 'Create an account' : 'Log in instead'}
+            </button>
+          </p>
+        </form>
+      </section>
+    </div>
+  );
+}
 
 type Review = { author: string; text: string };
 type ProductVariant = { productId: string; label: string; size: string; price: number; bottleCount: number };
@@ -294,7 +404,7 @@ function Home() {
         queryClient.invalidateQueries({ queryKey: billingHistory.queryKey });
         queryClient.invalidateQueries({ queryKey: adminOrders.queryKey });
       }).catch(() => {
-        setFormError('We received you back from Stripe, but could not confirm the payment yet.');
+        setFormError('We received you back from Safe Pay, but could not confirm the payment yet.');
         setCartOpen(true);
       });
     }
@@ -360,6 +470,7 @@ function Home() {
       {cartOpen && <CartDrawer items={cart} onClose={closeCart} onChangeQty={changeQty} onCheckout={openCheckout} checkout={checkout} onBack={() => setCheckout(false)} shipping={shipping} setShipping={setShipping} onSubmit={submitOrder} isPending={isSubmitting} retryBlocked={retryBlocked} onViewBilling={viewBillingBeforeRetry} onCheckPrevious={() => { if (recoveryOrderNumber) checkCancelledOrder(recoveryOrderNumber); }} canCheckPrevious={Boolean(recoveryOrderNumber)} error={formError} confirmation={confirmation} onContinue={() => { setConfirmation(''); closeCart(); openCatalog(); }} isAuthenticated={auth.isAuthenticated} />}
      {billingOpen && auth.user && <BillingHistoryWindow records={billingHistory.data ?? []} isLoading={billingHistory.isLoading} isError={billingHistory.isError} user={auth.user} onClose={() => setBillingOpen(false)} />}
        {adminOpen && isAdmin && <AdminOrderTrackingWindow records={adminOrders.data ?? []} isLoading={adminOrders.isLoading} isError={adminOrders.isError} onClose={() => setAdminOpen(false)} />}
+        <AuthModal open={auth.authModalOpen} onClose={() => auth.setAuthModalOpen(false)} onSuccess={auth.refreshUser} />
   </div>;
 }
 
