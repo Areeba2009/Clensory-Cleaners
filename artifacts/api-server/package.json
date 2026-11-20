@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
+    "@sfpy/node-sdk": "^3.0.2",
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
+
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
