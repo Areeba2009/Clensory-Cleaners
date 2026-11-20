@@ -1,67 +1,27 @@
-import {
-  GetCurrentAuthUserResponse,
-} from "@workspace/api-zod";
+import { GetCurrentAuthUserResponse } from "@workspace/api-zod";
 import { db, isAdminEmail, usersTable } from "@workspace/db";
-import { Router, type IRouter, type Request, type Response } from "express";
-import * as oidc from "openid-client";
+import { eq } from "drizzle-orm";
+import { Router, type IRouter, type Response } from "express";
 import {
   clearSession,
   createSession,
-  getOidcConfig,
   getSessionId,
-  ISSUER_URL,
+  hashPassword,
   SESSION_COOKIE,
   SESSION_TTL,
-  type SessionData,
+  verifyPassword,
 } from "../lib/auth";
 
-const OIDC_COOKIE_TTL = 10 * 60 * 1000;
 const router: IRouter = Router();
-
-function getOrigin(req: Request): string {
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
-  return `${proto}://${host}`;
-}
 
 function setSessionCookie(res: Response, sid: string) {
   res.cookie(SESSION_COOKIE, sid, {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL,
   });
-}
-
-function setOidcCookie(res: Response, name: string, value: string) {
-  res.cookie(name, value, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: OIDC_COOKIE_TTL,
-  });
-}
-
-function getSafeReturnTo(value: unknown): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return "/";
-  return value;
-}
-
-async function upsertUser(claims: Record<string, unknown>) {
-  const userData = {
-    id: claims.sub as string,
-    email: (claims.email as string) || null,
-    firstName: (claims.first_name as string) || null,
-    lastName: (claims.last_name as string) || null,
-    profileImageUrl: (claims.profile_image_url || claims.picture) as string | null,
-  };
-  const [user] = await db.insert(usersTable).values(userData).onConflictDoUpdate({
-    target: usersTable.id,
-    set: { ...userData, updatedAt: new Date() },
-  }).returning();
-  return user;
 }
 
 router.get("/auth/user", (req, res) => {
@@ -69,97 +29,89 @@ router.get("/auth/user", (req, res) => {
   res.json(GetCurrentAuthUserResponse.parse({ user: req.isAuthenticated() ? req.user : null }));
 });
 
-router.get("/login", async (req, res) => {
-  const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
-  const state = oidc.randomState();
-  const nonce = oidc.randomNonce();
-  const codeVerifier = oidc.randomPKCECodeVerifier();
-  const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
+router.post("/auth/register", async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const firstName = typeof req.body?.firstName === "string" ? req.body.firstName.trim() : "";
+  const lastName = typeof req.body?.lastName === "string" ? req.body.lastName.trim() : "";
 
-  const redirectTo = oidc.buildAuthorizationUrl(config, {
-    redirect_uri: callbackUrl,
-    scope: "openid email profile offline_access",
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
-    prompt: "login consent",
-    state,
-    nonce,
-  });
-
-  setOidcCookie(res, "code_verifier", codeVerifier);
-  setOidcCookie(res, "nonce", nonce);
-  setOidcCookie(res, "state", state);
-  setOidcCookie(res, "return_to", getSafeReturnTo(req.query.returnTo));
-  res.redirect(redirectTo.href);
-});
-
-router.get("/callback", async (req, res) => {
-  const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
-  const codeVerifier = req.cookies?.code_verifier;
-  const nonce = req.cookies?.nonce;
-  const expectedState = req.cookies?.state;
-  if (!codeVerifier || !expectedState) {
-    res.redirect("/api/login");
-    return;
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Please enter a valid email address." });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters." });
   }
 
-  const currentUrl = new URL(`${callbackUrl}?${new URL(req.url, `http://${req.headers.host}`).searchParams}`);
-  let tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers;
   try {
-    tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
-      pkceCodeVerifier: codeVerifier,
-      expectedNonce: nonce,
-      expectedState,
-      idTokenExpected: true,
-    });
-  } catch {
-    res.redirect("/api/login");
-    return;
-  }
+    const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email));
+    if (existing) {
+      return res.status(409).json({ error: "An account with this email already exists. Please log in." });
+    }
 
-  const returnTo = getSafeReturnTo(req.cookies?.return_to);
-  for (const name of ["code_verifier", "nonce", "state", "return_to"]) {
-    res.clearCookie(name, { path: "/" });
-  }
+    const [created] = await db
+      .insert(usersTable)
+      .values({
+        email,
+        passwordHash: hashPassword(password),
+        firstName: firstName || null,
+        lastName: lastName || null,
+      })
+      .returning();
 
-  const claims = tokens.claims();
-  if (!claims) {
-    res.redirect("/api/login");
-    return;
-  }
+    const user = {
+      id: created.id,
+      email: created.email,
+      firstName: created.firstName,
+      lastName: created.lastName,
+      profileImageUrl: created.profileImageUrl,
+      isAdmin: isAdminEmail(created.email),
+    };
 
-  const dbUser = await upsertUser(claims as unknown as Record<string, unknown>);
-  const now = Math.floor(Date.now() / 1000);
-  const sessionData: SessionData = {
-    user: {
-      id: dbUser.id,
-      email: dbUser.email,
-      firstName: dbUser.firstName,
-      lastName: dbUser.lastName,
-      profileImageUrl: dbUser.profileImageUrl,
-      isAdmin: isAdminEmail(dbUser.email),
-    },
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,
-  };
-  setSessionCookie(res, await createSession(sessionData));
-  res.redirect(returnTo);
+    const sid = await createSession({ user });
+    setSessionCookie(res, sid);
+    return res.status(201).json({ user });
+  } catch (error) {
+    req.log.error({ err: error }, "Registration failed");
+    return res.status(500).json({ error: "We couldn't create your account right now." });
+  }
 });
 
-router.get("/logout", async (req, res) => {
-  const config = await getOidcConfig();
-  const origin = getOrigin(req);
-  const returnTo = getSafeReturnTo(req.query.returnTo);
+router.post("/auth/login", async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Please enter both your email and password." });
+  }
+
+  try {
+    const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email));
+    if (!existing || !existing.passwordHash || !verifyPassword(password, existing.passwordHash)) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    const user = {
+      id: existing.id,
+      email: existing.email,
+      firstName: existing.firstName,
+      lastName: existing.lastName,
+      profileImageUrl: existing.profileImageUrl,
+      isAdmin: isAdminEmail(existing.email),
+    };
+
+    const sid = await createSession({ user });
+    setSessionCookie(res, sid);
+    return res.json({ user });
+  } catch (error) {
+    req.log.error({ err: error }, "Login failed");
+    return res.status(500).json({ error: "We couldn't log you in right now." });
+  }
+});
+
+router.post("/auth/logout", async (req, res) => {
   const sid = getSessionId(req);
   await clearSession(res, sid);
-  const endSessionUrl = oidc.buildEndSessionUrl(config, {
-    client_id: process.env.REPL_ID!,
-    post_logout_redirect_uri: new URL(returnTo, `${origin}/`).href,
-  });
-  res.redirect(endSessionUrl.href);
+  return res.json({ ok: true });
 });
 
 export default router;
