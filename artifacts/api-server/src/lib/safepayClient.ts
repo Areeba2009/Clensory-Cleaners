@@ -1,4 +1,4 @@
-import { Safepay, SafepayEnvironment } from "@sfpy/node-sdk";
+import { Safepay } from "@sfpy/node-sdk";
 
 export function getSafepayClient() {
   const apiKey = process.env.SAFEPAY_API_KEY;
@@ -8,11 +8,11 @@ export function getSafepayClient() {
     throw new Error("Missing SAFEPAY_API_KEY or SAFEPAY_V1_SECRET in environment variables.");
   }
 
+  const environment =
+    process.env.SAFEPAY_ENVIRONMENT === "production" ? "production" : "sandbox";
+
   return new Safepay({
-    environment:
-      process.env.SAFEPAY_ENVIRONMENT === "production"
-        ? SafepayEnvironment.Production
-        : SafepayEnvironment.Sandbox,
+    environment: environment as any,
     apiKey,
     v1Secret,
     webhookSecret: process.env.SAFEPAY_WEBHOOK_SECRET || v1Secret,
@@ -24,3 +24,4 @@ export function getSafepayBaseUrl() {
     ? "https://getsafepay.com"
     : "https://getsafepay.com";
 }
+
