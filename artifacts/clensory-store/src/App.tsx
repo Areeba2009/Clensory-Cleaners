@@ -22,33 +22,47 @@ type AuthUser = {
 };
 
 function useAuth() {
-  const qc = useQueryClient();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const { data, isLoading } = useQuery<{ user: AuthUser | null }>({
-    queryKey: ['/api/auth/user'],
-    queryFn: async () => {
+
+  const refreshUser = async () => {
+    try {
       const res = await fetch('/api/auth/user', { credentials: 'include' });
-      if (!res.ok) return { user: null };
-      return res.json();
-    },
-  });
+      if (!res.ok) {
+        setUser(null);
+      } else {
+        const data = (await res.json()) as { user: AuthUser | null };
+        setUser(data.user ?? null);
+      }
+    } catch {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshUser();
+  }, []);
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    await qc.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    setUser(null);
   };
 
   return {
-    user: data?.user ?? null,
-    isAuthenticated: Boolean(data?.user),
+    user,
+    isAuthenticated: Boolean(user),
     isLoading,
     authModalOpen,
     setAuthModalOpen,
     login: () => setAuthModalOpen(true),
     logout,
-    refreshUser: () => qc.invalidateQueries({ queryKey: ['/api/auth/user'] }),
+    refreshUser,
   };
 }
+
 
 function AuthModal({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
