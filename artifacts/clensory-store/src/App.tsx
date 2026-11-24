@@ -6,9 +6,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import logo from '@assets/Clensory_(1)_1786865672056.png';
-import laundroPhoto from '@assets/0_Clenso_(12)_1786866511997.png';
-import clensoPhoto from '@assets/1_Clenso_(11)_1786866511998.png';
+const logo = '/logo.png';
+const laundroPhoto = '/laundro.png';
+const clensoPhoto = '/clens@.png';
+
 
 const queryClient = new QueryClient();
 
