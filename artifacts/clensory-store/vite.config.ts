@@ -57,7 +57,8 @@ export default defineConfig({
         'attached_assets',
       ),
     },
-    dedupe: ['react', 'react-dom'],
+    dedupe: ['react', 'react-dom', '@tanstack/react-query'],
+
   },
   root: path.resolve(import.meta.dirname),
   build: {
